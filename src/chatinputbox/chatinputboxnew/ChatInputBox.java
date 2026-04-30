@@ -14,6 +14,7 @@ import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.EditText;
+import android.widget.FrameLayout;
 import android.widget.HorizontalScrollView;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
@@ -40,6 +41,8 @@ public class ChatInputBox extends AndroidViewComponent {
     private final ImageView drawerToggleButton;
     private final TextView titleTextView;
     private final LinearLayout screenLayout;
+    private final FrameLayout chatContainer;
+    private final LinearLayout chatPane;
     private final LinearLayout drawer;
     private final ScrollView drawerScroll;
     private final LinearLayout conversationList;
@@ -61,7 +64,7 @@ public class ChatInputBox extends AndroidViewComponent {
     private int buttonColor = Color.WHITE;
     private int codeBackgroundColor = Color.rgb(20, 20, 20);
     private int drawerBackgroundColor = Color.rgb(32, 33, 35);
-    private int titleBarBackgroundColor = Color.rgb(24, 26, 32);
+    private int titleBarBackgroundColor = Color.argb(220, 98, 65, 140);
 
     private int cornerRadiusDp = 24;
     private String hint = "Ask me anything";
@@ -69,7 +72,7 @@ public class ChatInputBox extends AndroidViewComponent {
     private int streamSectionDelayMs = 220;
     private String drawerOpenIconPath = "";
     private String drawerCloseIconPath = "";
-    private boolean drawerExpanded = true;
+    private boolean drawerExpanded = false;
 
     private String sendButtonImagePath = "";
     private String micButtonImagePath = "";
@@ -137,7 +140,8 @@ public class ChatInputBox extends AndroidViewComponent {
                 1f
         ));
 
-        LinearLayout chatPane = new LinearLayout(container.$context());
+        chatContainer = new FrameLayout(container.$context());
+        chatPane = new LinearLayout(container.$context());
         chatPane.setOrientation(LinearLayout.VERTICAL);
         chatPane.setPadding(dp(8), dp(8), dp(8), dp(8));
 
@@ -209,8 +213,17 @@ public class ChatInputBox extends AndroidViewComponent {
                 ViewGroup.LayoutParams.WRAP_CONTENT
         ));
 
-        screenLayout.addView(drawer, new LinearLayout.LayoutParams(getDrawerExpandedWidthPx(), ViewGroup.LayoutParams.MATCH_PARENT));
-        screenLayout.addView(chatPane, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f));
+        chatContainer.addView(chatPane, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+        ));
+        FrameLayout.LayoutParams drawerLayoutParams = new FrameLayout.LayoutParams(
+                getDrawerExpandedWidthPx(),
+                ViewGroup.LayoutParams.MATCH_PARENT
+        );
+        drawerLayoutParams.gravity = Gravity.START;
+        chatContainer.addView(drawer, drawerLayoutParams);
+        screenLayout.addView(chatContainer, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f));
         root.addView(titleBar, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         root.addView(screenLayout, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
@@ -232,6 +245,7 @@ public class ChatInputBox extends AndroidViewComponent {
 
     @SimpleFunction(description = "Displays and formats an AI response section by section for more natural streaming.")
     public void DisplayAIMessage(String message) {
+        messagesBox.setGravity(Gravity.NO_GRAVITY);
         final ArrayList<View> sections = renderMessage(message);
         for (int i = 0; i < sections.size(); i++) {
             final View section = sections.get(i);
@@ -285,8 +299,20 @@ public class ChatInputBox extends AndroidViewComponent {
 
     private void showWelcomeMessage() {
         messagesBox.removeAllViews();
-        messagesBox.addView(makeText("CodeIgnite GPT", 28, true, false));
-        messagesBox.addView(makeText("Ask any Question", 16, false, false));
+        TextView welcome = new TextView(container.$context());
+        welcome.setText("Ask any Question");
+        welcome.setTextSize(20);
+        welcome.setTypeface(Typeface.DEFAULT_BOLD);
+        welcome.setTextColor(textColor);
+        welcome.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+        );
+        lp.setMargins(0, dp(12), 0, dp(12));
+        welcome.setLayoutParams(lp);
+        messagesBox.setGravity(Gravity.CENTER);
+        messagesBox.addView(welcome);
     }
 
     private ArrayList<View> renderMessage(String message) {
@@ -477,9 +503,9 @@ public class ChatInputBox extends AndroidViewComponent {
 
     private void updateDrawerLayoutWidth() {
         ViewGroup.LayoutParams lp = drawer.getLayoutParams();
-        if (!(lp instanceof LinearLayout.LayoutParams)) return;
-        LinearLayout.LayoutParams params = (LinearLayout.LayoutParams) lp;
-        params.width = drawerExpanded ? getDrawerExpandedWidthPx() : 0;
+        if (!(lp instanceof FrameLayout.LayoutParams)) return;
+        FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) lp;
+        params.width = getDrawerExpandedWidthPx();
         drawer.setLayoutParams(params);
         drawer.setVisibility(drawerExpanded ? View.VISIBLE : View.GONE);
         refreshDrawerToggleIcon();
