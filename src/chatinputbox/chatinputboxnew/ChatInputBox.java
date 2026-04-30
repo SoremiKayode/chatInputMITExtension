@@ -6,13 +6,19 @@ import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
+import android.text.SpannableString;
+import android.text.Spanned;
 import android.os.Handler;
 import android.os.Looper;
 import android.text.Html;
 import android.text.TextUtils;
+import android.text.style.ForegroundColorSpan;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.content.ClipData;
+import android.content.ClipboardManager;
+import android.content.Context;
 import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.HorizontalScrollView;
@@ -32,6 +38,9 @@ import com.google.appinventor.components.runtime.util.MediaUtil;
 import java.io.InputStream;
 import java.net.URL;
 import java.util.ArrayList;
+import java.util.HashMap;
+import org.json.JSONArray;
+import org.json.JSONObject;
 
 public class ChatInputBox extends AndroidViewComponent {
 
@@ -54,6 +63,7 @@ public class ChatInputBox extends AndroidViewComponent {
     private final ImageView audioButton;
     private final ImageView sendButton;
     private final Handler handler = new Handler(Looper.getMainLooper());
+    private final HashMap<String, String> drawerContentMap = new HashMap<String, String>();
 
     private int backgroundColor = Color.rgb(32, 33, 35);
     private int messageBackgroundColor = Color.rgb(52, 53, 65);
@@ -269,9 +279,41 @@ public class ChatInputBox extends AndroidViewComponent {
         }
     }
 
-    @SimpleFunction(description = "Replace drawer conversations with a newline-separated list.")
+    @SimpleFunction(description = "Populate drawer from JSON array of dictionaries. First key becomes title; value becomes AI content.")
+    public void SetConversationsFromDictionaryList(String jsonList) {
+        conversationList.removeAllViews();
+        drawerContentMap.clear();
+        try {
+            JSONArray list = new JSONArray(jsonList);
+            for (int i = 0; i < list.length(); i++) {
+                JSONObject item = list.optJSONObject(i);
+                if (item == null || item.length() == 0) continue;
+                JSONArray names = item.names();
+                if (names == null || names.length() == 0) continue;
+                final String title = names.optString(0, "").trim();
+                if (title.length() == 0) continue;
+                final String content = item.optString(title, "");
+                drawerContentMap.put(title, content);
+                TextView row = makeConversationRow(title);
+                row.setOnClickListener(new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        ClearMessages();
+                        DisplayAIMessage(content);
+                        ConversationSelected(title);
+                    }
+                });
+                conversationList.addView(row);
+            }
+        } catch (Exception e) {
+            DisplayAIMessage("Could not parse conversation dictionary list.");
+        }
+    }
+
+    @SimpleFunction(description = "Backward compatible: set drawer titles only (newline separated).")
     public void SetConversations(String newlineSeparatedTitles) {
         conversationList.removeAllViews();
+        drawerContentMap.clear();
         String[] items = newlineSeparatedTitles.split("\\n");
         for (int i = 0; i < items.length; i++) {
             final String title = items[i].trim();
@@ -280,16 +322,16 @@ public class ChatInputBox extends AndroidViewComponent {
             row.setOnClickListener(new View.OnClickListener() {
                 @Override
                 public void onClick(View v) {
+                    String content = drawerContentMap.containsKey(title) ? drawerContentMap.get(title) : "";
+                    if (content.length() > 0) {
+                        ClearMessages();
+                        DisplayAIMessage(content);
+                    }
                     ConversationSelected(title);
                 }
             });
             conversationList.addView(row);
         }
-    }
-
-    @SimpleFunction(description = "Request conversations for a specific TinyDB namespace/tag. Handle event TinyDbConversationsRequested.")
-    public void FetchConversationsFromTinyDb(String databaseName) {
-        TinyDbConversationsRequested(databaseName);
     }
 
     @SimpleFunction(description = "Clears all AI messages.")
@@ -361,10 +403,7 @@ public class ChatInputBox extends AndroidViewComponent {
         tv.setLineSpacing(dp(3), 1.0f);
         tv.setPadding(dp(14), dp(8), dp(14), dp(8));
         if (bold) tv.setTypeface(Typeface.DEFAULT_BOLD);
-        GradientDrawable bg = new GradientDrawable();
-        bg.setColor(messageBackgroundColor);
-        bg.setCornerRadius(dp(14));
-        tv.setBackground(bg);
+        tv.setBackgroundColor(Color.TRANSPARENT);
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         lp.setMargins(0, dp(5), 0, dp(5));
         tv.setLayoutParams(lp);
@@ -389,24 +428,60 @@ public class ChatInputBox extends AndroidViewComponent {
         return row;
     }
 
-    private HorizontalScrollView makeCodeBlock(String codeText) { /* unchanged behavior */
+    private LinearLayout makeCodeBlock(final String codeText) {
+        LinearLayout outer = new LinearLayout(container.$context());
+        outer.setOrientation(LinearLayout.VERTICAL);
+        GradientDrawable outerBg = new GradientDrawable();
+        outerBg.setColor(codeBackgroundColor);
+        outerBg.setCornerRadius(dp(12));
+        outer.setBackground(outerBg);
+        outer.setPadding(dp(10), dp(8), dp(10), dp(10));
+        LinearLayout header = new LinearLayout(container.$context());
+        header.setOrientation(LinearLayout.HORIZONTAL);
+        header.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
+        TextView copy = new TextView(container.$context());
+        copy.setText("Copy");
+        copy.setTextColor(Color.rgb(180, 180, 180));
+        copy.setTextSize(12);
+        copy.setPadding(dp(8), dp(4), dp(8), dp(4));
+        copy.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                ClipboardManager clipboard = (ClipboardManager) container.$context().getSystemService(Context.CLIPBOARD_SERVICE);
+                clipboard.setPrimaryClip(ClipData.newPlainText("code", codeText));
+            }
+        });
+        header.addView(copy);
+        outer.addView(header);
         HorizontalScrollView hsv = new HorizontalScrollView(container.$context());
         TextView codeView = new TextView(container.$context());
-        codeView.setText(codeText);
+        codeView.setText(highlightCode(codeText));
         codeView.setTextColor(Color.rgb(220, 220, 220));
         codeView.setTextSize(14);
         codeView.setTypeface(Typeface.MONOSPACE);
         codeView.setPadding(dp(12), dp(12), dp(12), dp(12));
         codeView.setTextIsSelectable(true);
-        GradientDrawable bg = new GradientDrawable();
-        bg.setColor(codeBackgroundColor);
-        bg.setCornerRadius(dp(12));
-        codeView.setBackground(bg);
+        codeView.setBackgroundColor(Color.TRANSPARENT);
         hsv.addView(codeView);
+        outer.addView(hsv);
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         lp.setMargins(0, dp(6), 0, dp(6));
-        hsv.setLayoutParams(lp);
-        return hsv;
+        outer.setLayoutParams(lp);
+        return outer;
+    }
+    private CharSequence highlightCode(String code) {
+        SpannableString span = new SpannableString(code);
+        String[] keywords = new String[]{"public", "private", "class", "if", "else", "for", "while", "return", "function", "const", "let", "var"};
+        for (String keyword : keywords) {
+            int from = 0;
+            while (true) {
+                int idx = code.indexOf(keyword, from);
+                if (idx < 0) break;
+                span.setSpan(new ForegroundColorSpan(Color.rgb(118, 171, 255)), idx, idx + keyword.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                from = idx + keyword.length();
+            }
+        }
+        return span;
     }
 
     private View makeImage(final String imageUrl) { /* unchanged behavior */
@@ -544,8 +619,6 @@ public class ChatInputBox extends AndroidViewComponent {
     public void ConversationSelected(String title) { EventDispatcher.dispatchEvent(this, "ConversationSelected", title); }
     @SimpleEvent(description = "Triggered when user taps new chat button in the drawer.")
     public void NewChatClicked() { EventDispatcher.dispatchEvent(this, "NewChatClicked"); }
-    @SimpleEvent(description = "Use this event to fetch conversation list from TinyDB using given database/tag name.")
-    public void TinyDbConversationsRequested(String databaseName) { EventDispatcher.dispatchEvent(this, "TinyDbConversationsRequested", databaseName); }
 
     @SimpleFunction(description = "Returns the current text inside the input box.")
     public String Text() { return editText.getText().toString(); }
