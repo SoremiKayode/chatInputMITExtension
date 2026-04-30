@@ -36,6 +36,9 @@ public class ChatInputBox extends AndroidViewComponent {
 
     private final ComponentContainer container;
     private final LinearLayout root;
+    private final LinearLayout titleBar;
+    private final ImageView drawerToggleButton;
+    private final TextView titleTextView;
     private final LinearLayout screenLayout;
     private final LinearLayout drawer;
     private final ScrollView drawerScroll;
@@ -58,10 +61,15 @@ public class ChatInputBox extends AndroidViewComponent {
     private int buttonColor = Color.WHITE;
     private int codeBackgroundColor = Color.rgb(20, 20, 20);
     private int drawerBackgroundColor = Color.rgb(32, 33, 35);
+    private int titleBarBackgroundColor = Color.rgb(24, 26, 32);
 
     private int cornerRadiusDp = 24;
-    private String hint = "Message ChatGPT";
+    private String hint = "Ask me anything";
+    private String titleBarText = "CodeIgnite GPT";
     private int streamSectionDelayMs = 220;
+    private String drawerOpenIconPath = "";
+    private String drawerCloseIconPath = "";
+    private boolean drawerExpanded = true;
 
     private String sendButtonImagePath = "";
     private String micButtonImagePath = "";
@@ -76,6 +84,23 @@ public class ChatInputBox extends AndroidViewComponent {
 
         root = new LinearLayout(container.$context());
         root.setOrientation(LinearLayout.VERTICAL);
+
+        titleBar = new LinearLayout(container.$context());
+        titleBar.setOrientation(LinearLayout.HORIZONTAL);
+        titleBar.setGravity(Gravity.CENTER_VERTICAL);
+        titleBar.setPadding(dp(12), dp(10), dp(12), dp(10));
+
+        drawerToggleButton = makeImageButton();
+        titleTextView = new TextView(container.$context());
+        titleTextView.setTextSize(19);
+        titleTextView.setTypeface(Typeface.DEFAULT_BOLD);
+        titleTextView.setPadding(dp(10), 0, 0, 0);
+
+        titleBar.addView(drawerToggleButton, new LinearLayout.LayoutParams(dp(40), dp(40)));
+        titleBar.addView(titleTextView, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+        ));
 
         screenLayout = new LinearLayout(container.$context());
         screenLayout.setOrientation(LinearLayout.HORIZONTAL);
@@ -150,6 +175,13 @@ public class ChatInputBox extends AndroidViewComponent {
         audioButton = makeImageButton();
         sendButton = makeImageButton();
 
+        drawerToggleButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                SetDrawerExpanded(!drawerExpanded);
+            }
+        });
+
         inputBar.addView(audioButton, new LinearLayout.LayoutParams(dp(40), dp(40)));
         inputBar.addView(sendButton, new LinearLayout.LayoutParams(dp(40), dp(40)));
 
@@ -177,8 +209,9 @@ public class ChatInputBox extends AndroidViewComponent {
                 ViewGroup.LayoutParams.WRAP_CONTENT
         ));
 
-        screenLayout.addView(drawer, new LinearLayout.LayoutParams(dp(124), ViewGroup.LayoutParams.MATCH_PARENT));
+        screenLayout.addView(drawer, new LinearLayout.LayoutParams(getDrawerExpandedWidthPx(), ViewGroup.LayoutParams.MATCH_PARENT));
         screenLayout.addView(chatPane, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f));
+        root.addView(titleBar, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         root.addView(screenLayout, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
         applyStyle();
@@ -407,6 +440,10 @@ public class ChatInputBox extends AndroidViewComponent {
     private void applyStyle() {
         root.setBackgroundColor(backgroundColor);
         drawer.setBackgroundColor(drawerBackgroundColor);
+        titleBar.setBackgroundColor(titleBarBackgroundColor);
+        titleTextView.setText(titleBarText);
+        titleTextView.setTextColor(textColor);
+        refreshDrawerToggleIcon();
         GradientDrawable newChatBg = new GradientDrawable();
         newChatBg.setColor(Color.rgb(64, 65, 79));
         newChatBg.setCornerRadius(dp(10));
@@ -425,7 +462,37 @@ public class ChatInputBox extends AndroidViewComponent {
         setButtonAsset(sendButton, sendButtonImagePath, "Send");
         setButtonAsset(audioButton, micButtonImagePath, "Mic");
         refreshSendButtonState();
+        updateDrawerLayoutWidth();
     }
+
+    private int getDrawerExpandedWidthPx() {
+        return Math.max(dp(180), Math.round(container.$context().getResources().getDisplayMetrics().widthPixels * 0.8f));
+    }
+
+    private void refreshDrawerToggleIcon() {
+        String fallback = drawerExpanded ? "Collapse" : "Expand";
+        String iconPath = drawerExpanded ? drawerCloseIconPath : drawerOpenIconPath;
+        setButtonAsset(drawerToggleButton, iconPath, fallback);
+    }
+
+    private void updateDrawerLayoutWidth() {
+        ViewGroup.LayoutParams lp = drawer.getLayoutParams();
+        if (!(lp instanceof LinearLayout.LayoutParams)) return;
+        LinearLayout.LayoutParams params = (LinearLayout.LayoutParams) lp;
+        params.width = drawerExpanded ? getDrawerExpandedWidthPx() : 0;
+        drawer.setLayoutParams(params);
+        drawer.setVisibility(drawerExpanded ? View.VISIBLE : View.GONE);
+        refreshDrawerToggleIcon();
+    }
+
+    @SimpleFunction(description = "Opens or collapses the drawer. Open = 80% screen width. Collapsed = hidden.")
+    public void SetDrawerExpanded(boolean expanded) {
+        drawerExpanded = expanded;
+        updateDrawerLayoutWidth();
+    }
+
+    @SimpleProperty(description = "Returns true if the drawer is expanded.")
+    public boolean DrawerExpanded() { return drawerExpanded; }
 
     private void refreshSendButtonState() {
         boolean enabled = !(lockSendWhileGenerating && isGenerating);
@@ -467,6 +534,14 @@ public class ChatInputBox extends AndroidViewComponent {
     public void SendButtonBusyImage(String value) { sendButtonBusyImagePath = value; applyStyle(); }
     @SimpleProperty(description = "Sets image asset path for microphone button. Example: mic.png")
     public void MicButtonImage(String value) { micButtonImagePath = value; applyStyle(); }
+    @SimpleProperty(description = "Sets image asset path for title bar icon when drawer is closed (open icon).")
+    public void DrawerOpenIconImage(String value) { drawerOpenIconPath = value; applyStyle(); }
+    @SimpleProperty(description = "Sets image asset path for title bar icon when drawer is open (collapse icon).")
+    public void DrawerCollapseIconImage(String value) { drawerCloseIconPath = value; applyStyle(); }
+    @SimpleProperty(description = "Sets the title text displayed in the top title bar.")
+    public void TitleBarText(String value) { titleBarText = value; applyStyle(); }
+    @SimpleProperty(description = "Returns the current title bar text.")
+    public String TitleBarText() { return titleBarText; }
     @SimpleProperty(description = "If true, send button becomes disabled while AI is generating.")
     public void DisableSendWhileGenerating(boolean value) { lockSendWhileGenerating = value; refreshSendButtonState(); }
     @SimpleProperty(description = "If true, send button is shown while AI is generating. If false it is hidden.")
@@ -479,6 +554,8 @@ public class ChatInputBox extends AndroidViewComponent {
     public void StreamSectionDelay(int value) { streamSectionDelayMs = value; }
     @SimpleProperty(description = "Sets the dark background color.")
     public void BackgroundColor(int value) { backgroundColor = value; applyStyle(); }
+    @SimpleProperty(description = "Sets top title bar background color.")
+    public void TitleBarBackgroundColor(int value) { titleBarBackgroundColor = value; applyStyle(); }
     @SimpleProperty(description = "Sets the AI message background color.")
     public void MessageBackgroundColor(int value) { messageBackgroundColor = value; }
     @SimpleProperty(description = "Sets the input bar background color.")
