@@ -17,7 +17,6 @@ import android.text.style.ForegroundColorSpan;
 import android.text.TextWatcher;
 import android.view.Gravity;
 import android.view.View;
-import android.view.MenuItem;
 import android.view.ViewGroup;
 import android.content.ClipData;
 import android.content.ClipboardManager;
@@ -29,8 +28,8 @@ import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.Toast;
-import android.widget.PopupMenu;
 import android.widget.TextView;
+import android.widget.PopupWindow;
 
 import com.google.appinventor.components.annotations.SimpleEvent;
 import com.google.appinventor.components.annotations.SimpleFunction;
@@ -44,6 +43,8 @@ import java.io.InputStream;
 import java.net.URL;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -103,6 +104,10 @@ public class ChatInputBox extends AndroidViewComponent {
     private boolean autoShowReadAloudWhenText = true;
     private String currentConversationId = "";
     private String currentConversationContent = "";
+    private final ArrayList<MenuAction> topMenuActions = new ArrayList<MenuAction>();
+    private String copyChatMenuIcon = "📋";
+    private String newChatMenuIcon = "✨";
+    private String translateMenuIcon = "🌐";
 
     public ChatInputBox(ComponentContainer container) {
         super(container);
@@ -242,7 +247,7 @@ public class ChatInputBox extends AndroidViewComponent {
         readAloudButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                ReadAloudClicked(editText.getText().toString());
+                ReadAloudRequested();
             }
         });
 
@@ -284,6 +289,7 @@ public class ChatInputBox extends AndroidViewComponent {
         root.addView(screenLayout, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
         applyStyle();
+        resetDefaultTopMenuActions();
         showWelcomeMessage();
         Width(ViewGroup.LayoutParams.MATCH_PARENT);
         Height(ViewGroup.LayoutParams.MATCH_PARENT);
@@ -520,7 +526,7 @@ public class ChatInputBox extends AndroidViewComponent {
         LinearLayout header = new LinearLayout(container.$context());
         header.setOrientation(LinearLayout.HORIZONTAL);
         header.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
-        TextView copy = new TextView(container.$context());
+        final TextView copy = new TextView(container.$context());
         copy.setText("Copy");
         copy.setTextColor(Color.rgb(180, 180, 180));
         copy.setTextSize(12);
@@ -530,6 +536,13 @@ public class ChatInputBox extends AndroidViewComponent {
             public void onClick(View v) {
                 ClipboardManager clipboard = (ClipboardManager) container.$context().getSystemService(Context.CLIPBOARD_SERVICE);
                 clipboard.setPrimaryClip(ClipData.newPlainText("code", codeText));
+                copy.setText("Copied");
+                handler.postDelayed(new Runnable() {
+                    @Override
+                    public void run() {
+                        copy.setText("Copy");
+                    }
+                }, 1000);
             }
         });
         header.addView(copy);
@@ -552,17 +565,22 @@ public class ChatInputBox extends AndroidViewComponent {
     }
     private CharSequence highlightCode(String code) {
         SpannableString span = new SpannableString(code);
-        String[] keywords = new String[]{"public", "private", "class", "if", "else", "for", "while", "return", "function", "const", "let", "var"};
-        for (String keyword : keywords) {
-            int from = 0;
-            while (true) {
-                int idx = code.indexOf(keyword, from);
-                if (idx < 0) break;
-                span.setSpan(new ForegroundColorSpan(Color.rgb(118, 171, 255)), idx, idx + keyword.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                from = idx + keyword.length();
-            }
-        }
+        applySpanByRegex(span, code, "\\b(class|interface|enum|struct)\\s+([A-Za-z_][A-Za-z0-9_]*)", 2, Color.rgb(255, 121, 198));
+        applySpanByRegex(span, code, "\\b(function|fun|def|void|int|float|double|String|boolean|var|let|const)\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*\\(", 2, Color.rgb(80, 250, 123));
+        applySpanByRegex(span, code, "\\b(if|else|for|while|switch|case|when|do|break|continue|return|try|catch|finally)\\b", 0, Color.rgb(189, 147, 249));
+        applySpanByRegex(span, code, "\\b(true|false|null|None|undefined|\\d+(?:\\.\\d+)?)\\b", 0, Color.rgb(241, 250, 140));
+        applySpanByRegex(span, code, "[{}]", 0, Color.rgb(255, 184, 108));
+        applySpanByRegex(span, code, "\\b([A-Za-z_][A-Za-z0-9_]*)\\s*=", 1, Color.rgb(139, 233, 253));
         return span;
+    }
+
+    private void applySpanByRegex(SpannableString span, String code, String regex, int groupIndex, int color) {
+        Matcher m = Pattern.compile(regex).matcher(code);
+        while (m.find()) {
+            int start = groupIndex == 0 ? m.start() : m.start(groupIndex);
+            int end = groupIndex == 0 ? m.end() : m.end(groupIndex);
+            if (start >= 0 && end > start) span.setSpan(new ForegroundColorSpan(color), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        }
     }
 
     private View makeImage(final String imageUrl) { /* unchanged behavior */
@@ -686,30 +704,65 @@ public class ChatInputBox extends AndroidViewComponent {
 
 
     private void showTopMenu(View anchor) {
-        PopupMenu menu = new PopupMenu(container.$context(), anchor);
-        menu.getMenu().add(0, 1, 1, "Copy chat");
-        menu.getMenu().add(0, 2, 2, "New chat");
-        menu.getMenu().add(0, 3, 3, "Translate");
-        menu.setOnMenuItemClickListener(new PopupMenu.OnMenuItemClickListener() {
-            @Override
-            public boolean onMenuItemClick(MenuItem item) {
-                if (item.getItemId() == 1) {
-                    CopyCurrentChatToClipboard();
-                    TopMenuCopyClicked();
-                    return true;
+        final PopupWindow popupWindow = new PopupWindow(container.$context());
+        LinearLayout menuRoot = new LinearLayout(container.$context());
+        menuRoot.setOrientation(LinearLayout.VERTICAL);
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(Color.rgb(20, 20, 20));
+        bg.setCornerRadius(dp(10));
+        menuRoot.setBackground(bg);
+        menuRoot.setPadding(dp(10), dp(10), dp(10), dp(10));
+        for (int i = 0; i < topMenuActions.size(); i++) {
+            final MenuAction action = topMenuActions.get(i);
+            TextView item = new TextView(container.$context());
+            item.setText(action.icon + "  " + action.label);
+            item.setTextColor(Color.WHITE);
+            item.setTextSize(14);
+            item.setPadding(dp(8), dp(10), dp(8), dp(10));
+            item.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    popupWindow.dismiss();
+                    handleTopMenuAction(action.id);
                 }
-                if (item.getItemId() == 2) {
-                    NewChatClicked();
-                    return true;
-                }
-                if (item.getItemId() == 3) {
-                    TranslateRequested(currentConversationId, editText.getText().toString().trim().length() > 0 ? editText.getText().toString() : currentConversationContent);
-                    return true;
-                }
-                return false;
+            });
+            menuRoot.addView(item);
+            if (i < topMenuActions.size() - 1) {
+                View line = new View(container.$context());
+                line.setBackgroundColor(Color.rgb(70, 70, 70));
+                menuRoot.addView(line, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(1)));
             }
-        });
-        menu.show();
+        }
+        popupWindow.setContentView(menuRoot);
+        popupWindow.setOutsideTouchable(true);
+        popupWindow.setFocusable(true);
+        popupWindow.setWidth(dp(200));
+        popupWindow.setHeight(ViewGroup.LayoutParams.WRAP_CONTENT);
+        popupWindow.showAsDropDown(anchor, -dp(140), dp(6));
+    }
+
+    private void handleTopMenuAction(int itemId) {
+        if (itemId == 1) {
+            CopyCurrentChatToClipboard();
+            TopMenuCopyClicked();
+            return;
+        }
+        if (itemId == 2) {
+            NewChatClicked();
+            return;
+        }
+        if (itemId == 3) {
+            TranslateRequested(currentConversationId, editText.getText().toString().trim().length() > 0 ? editText.getText().toString() : currentConversationContent);
+            return;
+        }
+        TopMenuCustomItemClicked(itemId);
+    }
+    
+    private void resetDefaultTopMenuActions() {
+        topMenuActions.clear();
+        topMenuActions.add(new MenuAction(1, "Copy chat", copyChatMenuIcon));
+        topMenuActions.add(new MenuAction(2, "New chat", newChatMenuIcon));
+        topMenuActions.add(new MenuAction(3, "Translate", translateMenuIcon));
     }
 
     private void updateReadAloudVisibility() {
@@ -811,14 +864,16 @@ public class ChatInputBox extends AndroidViewComponent {
     public void TopMenuCopyClicked() { EventDispatcher.dispatchEvent(this, "TopMenuCopyClicked"); }
     @SimpleEvent(description = "Triggered when translate menu option is clicked. Returns code/id and content.")
     public void TranslateRequested(String code, String content) { EventDispatcher.dispatchEvent(this, "TranslateRequested", code, content); }
-    @SimpleEvent(description = "Triggered when read aloud icon is clicked.")
-    public void ReadAloudClicked(String text) { EventDispatcher.dispatchEvent(this, "ReadAloudClicked", text); }
+    @SimpleEvent(description = "Triggered when read aloud icon is clicked to request text for TTS.")
+    public void ReadAloudRequested() { EventDispatcher.dispatchEvent(this, "ReadAloudRequested"); }
     @SimpleEvent(description = "Triggered when a drawer item action is selected after long click.")
     public void DrawerItemLongClicked(String conversationId, String title, String content) {
         EventDispatcher.dispatchEvent(this, "DrawerItemLongClicked", conversationId, title, content);
     }
     @SimpleEvent(description = "Triggered when AI text box is tapped.")
     public void AITextBoxClicked() { EventDispatcher.dispatchEvent(this, "AITextBoxClicked"); }
+    @SimpleEvent(description = "Triggered when a custom title bar menu item is clicked. Returns item id.")
+    public void TopMenuCustomItemClicked(int itemId) { EventDispatcher.dispatchEvent(this, "TopMenuCustomItemClicked", itemId); }
 
     @SimpleFunction(description = "Returns the current text inside the input box.")
     public String Text() { return editText.getText().toString(); }
@@ -849,6 +904,14 @@ public class ChatInputBox extends AndroidViewComponent {
     public void ShowReadAloudButton(boolean value) { showReadAloudButton = value; updateReadAloudVisibility(); }
     @SimpleProperty(description = "If true, read aloud button appears when AI textbox has content.")
     public void AutoShowReadAloudWhenText(boolean value) { autoShowReadAloudWhenText = value; updateReadAloudVisibility(); }
+    @SimpleProperty(description = "Icon text for Copy chat item in title bar menu.")
+    public void CopyChatMenuIcon(String value) { copyChatMenuIcon = value == null ? "" : value; resetDefaultTopMenuActions(); }
+    @SimpleProperty(description = "Icon text for New chat item in title bar menu.")
+    public void NewChatMenuIcon(String value) { newChatMenuIcon = value == null ? "" : value; resetDefaultTopMenuActions(); }
+    @SimpleProperty(description = "Icon text for Translate item in title bar menu.")
+    public void TranslateMenuIcon(String value) { translateMenuIcon = value == null ? "" : value; resetDefaultTopMenuActions(); }
+    @SimpleFunction(description = "Adds a custom menu item to title bar menu.")
+    public void AddTitleBarMenuItem(int id, String label, String iconText) { topMenuActions.add(new MenuAction(id, label, iconText)); }
     @SimpleProperty(description = "Sets the hint text shown when the input is empty.")
     public void Hint(String value) { hint = value; applyStyle(); }
     @SimpleProperty(description = "Returns the hint text.")
@@ -871,4 +934,15 @@ public class ChatInputBox extends AndroidViewComponent {
     public void HintColor(int value) { hintColor = value; applyStyle(); }
     @SimpleProperty(description = "Sets the corner radius in dp.")
     public void CornerRadius(int value) { cornerRadiusDp = value; applyStyle(); }
+
+    private static class MenuAction {
+        final int id;
+        final String label;
+        final String icon;
+        MenuAction(int id, String label, String icon) {
+            this.id = id;
+            this.label = label == null ? "" : label;
+            this.icon = icon == null ? "" : icon;
+        }
+    }
 }
