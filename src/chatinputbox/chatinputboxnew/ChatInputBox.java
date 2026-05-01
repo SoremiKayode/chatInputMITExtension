@@ -156,6 +156,14 @@ public class ChatInputBox extends AndroidViewComponent {
         drawer.setOrientation(LinearLayout.VERTICAL);
         drawer.setPadding(dp(8), dp(10), dp(8), dp(10));
 
+        drawerScrim = new View(container.$context());
+        drawerScrim.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                DrawerExpanded(false);
+            }
+        });
+
         newChatButton = new TextView(container.$context());
         newChatButton.setText("+ New chat");
         newChatButton.setTypeface(Typeface.DEFAULT_BOLD);
