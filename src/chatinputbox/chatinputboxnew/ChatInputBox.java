@@ -96,6 +96,7 @@ public class ChatInputBox extends AndroidViewComponent {
 
     private String sendButtonImagePath = "";
     private String micButtonImagePath = "";
+    private String readAloudButtonImagePath = "";
     private boolean lockSendWhileGenerating = true;
     private boolean showSendWhileGenerating = true;
     private boolean isGenerating = false;
@@ -568,15 +569,28 @@ public class ChatInputBox extends AndroidViewComponent {
     }
     private CharSequence highlightCode(String code) {
         SpannableString span = new SpannableString(code);
+
+        applySpanByRegex(span, code, "(?m)#.*$|//.*$|--.*$|/\\*([\\s\\S]*?)\\*/", 0, Color.rgb(98, 114, 164));
+        applySpanByRegex(span, code, "\"([^\\\"\\\\]|\\\\.)*\"|'([^'\\\\]|\\\\.)*'", 0, Color.rgb(241, 250, 140));
+
         applySpanByRegex(span, code, "\\b(import|from|package|using|include|require|module|namespace|export)\\b", 0, Color.rgb(139, 233, 253));
-        applySpanByRegex(span, code, "\\b(class|interface|enum|struct)\\s+([A-Za-z_][A-Za-z0-9_]*)", 2, Color.rgb(255, 121, 198));
-        applySpanByRegex(span, code, "\\b(function|fun|def|void|int|float|double|String|boolean|var|let|const|public|private|protected|static|async)\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*\\(", 2, Color.rgb(80, 250, 123));
-        applySpanByRegex(span, code, "\\b(for|while|do|foreach)\\b", 0, Color.rgb(255, 184, 108));
-        applySpanByRegex(span, code, "\\b(if|else|switch|case|when|break|continue|return|try|catch|finally)\\b", 0, Color.rgb(189, 147, 249));
+        applySpanByRegex(span, code, "\\b(class|interface|enum|struct|record|trait|object|protocol|extends|implements)\\b", 0, Color.rgb(255, 121, 198));
+        applySpanByRegex(span, code, "\\b(public|private|protected|internal|static|final|abstract|readonly|sealed|override|virtual|const|volatile|synchronized)\\b", 0, Color.rgb(255, 85, 85));
+        applySpanByRegex(span, code, "\\b(if|else|switch|case|when|break|continue|return|try|catch|finally|throw|throws)\\b", 0, Color.rgb(189, 147, 249));
+        applySpanByRegex(span, code, "\\b(for|while|do|foreach|in|of)\\b", 0, Color.rgb(255, 184, 108));
+        applySpanByRegex(span, code, "\\b(async|await|yield|lambda|new|delete|typeof|instanceof)\\b", 0, Color.rgb(80, 250, 123));
+
+        applySpanByRegex(span, code, "\\b(function|fun|def|fn|void|int|float|double|String|boolean|char|long|short|byte|var|let|val|const)\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*\\(", 2, Color.rgb(80, 250, 123));
+        applySpanByRegex(span, code, "\\b(class|interface|enum|struct|record)\\s+([A-Za-z_][A-Za-z0-9_]*)", 2, Color.rgb(255, 121, 198));
+        applySpanByRegex(span, code, "@[A-Za-z_][A-Za-z0-9_]*", 0, Color.rgb(255, 184, 108));
+
+        applySpanByRegex(span, code, "\\b(true|false|null|None|undefined|NaN|Infinity|\\d+(?:\\.\\d+)?)\\b", 0, Color.rgb(241, 250, 140));
         applySpanByRegex(span, code, "\\b([A-Za-z_][A-Za-z0-9_]*)\\s*=", 1, Color.rgb(255, 121, 198));
-        applySpanByRegex(span, code, "=\\s*([^\\n;]+)", 1, Color.rgb(241, 250, 140));
-        applySpanByRegex(span, code, "\\b(true|false|null|None|undefined|\\d+(?:\\.\\d+)?)\\b", 0, Color.rgb(241, 250, 140));
-        applySpanByRegex(span, code, "[{}()]", 0, Color.rgb(98, 114, 164));
+        applySpanByRegex(span, code, "(==|!=|<=|>=|&&|\\|\\||=>|->|::|\\+\\+|--|[+\\-*/%])", 0, Color.rgb(139, 233, 253));
+        applySpanByRegex(span, code, "[{}()\\[\\]]", 0, Color.rgb(98, 114, 164));
+        applySpanByRegex(span, code, "(?i)\\b(SELECT|FROM|WHERE|JOIN|ORDER\\s+BY|GROUP\\s+BY|INSERT|UPDATE|DELETE|CREATE|ALTER|DROP)\\b", 0, Color.rgb(255, 85, 85));
+        applySpanByRegex(span, code, "(?i)</?[a-z][a-z0-9-]*\\b[^>]*>", 0, Color.rgb(139, 233, 253));
+
         return span;
     }
 
@@ -828,7 +842,7 @@ public class ChatInputBox extends AndroidViewComponent {
         setButtonAsset(sendButton, sendButtonImagePath, "Send");
         setButtonAsset(audioButton, micButtonImagePath, "Mic");
         setButtonAsset(topMenuButton, topMenuIconPath, "⋮");
-        setButtonAsset(readAloudButton, "", "🔊");
+        setButtonAsset(readAloudButton, readAloudButtonImagePath, "🔊");
         updateReadAloudVisibility();
         refreshSendButtonState();
         updateDrawerLayoutWidth();
@@ -919,6 +933,8 @@ public class ChatInputBox extends AndroidViewComponent {
     public void SendButtonBusyImage(String value) { sendButtonBusyImagePath = value; applyStyle(); }
     @SimpleProperty(description = "Sets image asset path for microphone button. Example: mic.png")
     public void MicButtonImage(String value) { micButtonImagePath = value; applyStyle(); }
+    @SimpleProperty(description = "Sets image asset path for read aloud button. Example: readaloud.png")
+    public void ReadAloudButtonImage(String value) { readAloudButtonImagePath = value; applyStyle(); }
     @SimpleProperty(description = "Sets image asset path for title bar icon when drawer is closed (open icon).")
     public void DrawerOpenIconImage(String value) { drawerOpenIconPath = value; applyStyle(); }
     @SimpleProperty(description = "Sets image asset path for title bar icon when drawer is open (collapse icon).")
