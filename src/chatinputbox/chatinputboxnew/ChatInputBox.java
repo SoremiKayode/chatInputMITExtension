@@ -916,7 +916,6 @@ public class ChatInputBox extends AndroidViewComponent {
                 anchor.getLocationOnScreen(anchorLocation);
                 int anchorX = anchorLocation[0];
                 int anchorY = anchorLocation[1];
-                int anchorBottom = anchorY + anchor.getHeight();
 
                 Rect visibleFrame = new Rect();
                 root.getWindowVisibleDisplayFrame(visibleFrame);
@@ -926,8 +925,27 @@ public class ChatInputBox extends AndroidViewComponent {
                 int maxX = Math.max(minX, visibleFrame.right - popupWidth - dp(8));
                 int clampedX = Math.max(minX, Math.min(desiredX, maxX));
 
-                int y = anchorBottom + yoff;
-                popupWindow.showAtLocation(root, Gravity.TOP | Gravity.START, clampedX, y);
+                int[] rootLocation = new int[2];
+                root.getLocationOnScreen(rootLocation);
+                int yBelow = anchorY - rootLocation[1] + anchor.getHeight() + yoff;
+                int yAbove = anchorY - rootLocation[1] - yoff;
+
+                popupWindow.setAnimationStyle(android.R.style.Animation_Dialog);
+                popupWindow.showAtLocation(anchor, Gravity.TOP | Gravity.START, clampedX, yBelow);
+
+                View content = popupWindow.getContentView();
+                if (content != null) {
+                    content.measure(
+                            View.MeasureSpec.makeMeasureSpec(popupWidth, View.MeasureSpec.AT_MOST),
+                            View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+                    );
+                    int popupHeight = content.getMeasuredHeight();
+                    int screenBottom = visibleFrame.bottom - rootLocation[1];
+                    if (yBelow + popupHeight > screenBottom) {
+                        int y = Math.max(visibleFrame.top + dp(8) - rootLocation[1], yAbove - popupHeight);
+                        popupWindow.update(clampedX, y, popupWidth, ViewGroup.LayoutParams.WRAP_CONTENT);
+                    }
+                }
             }
         });
     }
