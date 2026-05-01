@@ -1,14 +1,17 @@
 package chatinputbox.chatinputboxnew;
 
+import android.app.Activity;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Color;
+import android.graphics.Rect;
 import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.text.Editable;
 import android.text.SpannableString;
 import android.text.Spanned;
+import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.text.Html;
@@ -18,6 +21,7 @@ import android.text.TextWatcher;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.WindowManager;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
@@ -892,10 +896,49 @@ public class ChatInputBox extends AndroidViewComponent {
         });
         int popupWidth = Math.max(dp(220), anchor.getWidth());
         audioReadAloudListPopup = new PopupWindow(listView, popupWidth, ViewGroup.LayoutParams.WRAP_CONTENT, true);
-        audioReadAloudListPopup.setOutsideTouchable(true);
-        audioReadAloudListPopup.setFocusable(true);
-        audioReadAloudListPopup.setElevation(dp(8));
-        audioReadAloudListPopup.showAsDropDown(anchor, 0, dp(6));
+        configurePopupWindow(audioReadAloudListPopup);
+        showPopupBelowAnchor(audioReadAloudListPopup, anchor, 0, dp(6));
+    }
+
+
+    private void configurePopupWindow(PopupWindow popupWindow) {
+        popupWindow.setOutsideTouchable(true);
+        popupWindow.setFocusable(true);
+        popupWindow.setClippingEnabled(false);
+        popupWindow.setElevation(dp(12));
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            popupWindow.setWindowLayoutType(WindowManager.LayoutParams.TYPE_APPLICATION_SUB_PANEL);
+        }
+    }
+
+
+    private void showPopupBelowAnchor(final PopupWindow popupWindow, final View anchor, final int xoff, final int yoff) {
+        final View rootView = ((Activity) container.$context()).getWindow().getDecorView();
+        final int[] location = new int[2];
+        anchor.getLocationOnScreen(location);
+        int x = location[0] + xoff;
+        int y = location[1] + anchor.getHeight() + yoff;
+
+        popupWindow.showAtLocation(rootView, Gravity.NO_GRAVITY, x, y);
+
+        final View contentView = popupWindow.getContentView();
+        if (contentView != null) {
+            contentView.measure(View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
+                    View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
+            int popupWidth = contentView.getMeasuredWidth();
+            int popupHeight = contentView.getMeasuredHeight();
+            Rect visibleFrame = new Rect();
+            rootView.getWindowVisibleDisplayFrame(visibleFrame);
+
+            int adjustedX = Math.max(visibleFrame.left, Math.min(x, visibleFrame.right - popupWidth));
+            int adjustedY = y;
+            if (y + popupHeight > visibleFrame.bottom) {
+                adjustedY = location[1] - popupHeight - dp(6);
+            }
+            adjustedY = Math.max(visibleFrame.top, adjustedY);
+
+            popupWindow.update(adjustedX, adjustedY, -1, -1);
+        }
     }
 
     private void dismissAudioReadAloudList() {
@@ -936,11 +979,10 @@ public class ChatInputBox extends AndroidViewComponent {
             }
         }
         popupWindow.setContentView(menuRoot);
-        popupWindow.setOutsideTouchable(true);
-        popupWindow.setFocusable(true);
+        configurePopupWindow(popupWindow);
         popupWindow.setWidth(dp(200));
         popupWindow.setHeight(ViewGroup.LayoutParams.WRAP_CONTENT);
-        popupWindow.showAsDropDown(anchor, -dp(140), dp(6));
+        showPopupBelowAnchor(popupWindow, anchor, -dp(140), dp(6));
     }
 
     private void handleTopMenuAction(int itemId) {
