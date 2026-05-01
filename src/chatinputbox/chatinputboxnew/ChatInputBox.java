@@ -30,6 +30,9 @@ import android.widget.ScrollView;
 import android.widget.Toast;
 import android.widget.TextView;
 import android.widget.PopupWindow;
+import android.widget.ListView;
+import android.widget.ArrayAdapter;
+import android.widget.AdapterView;
 
 import com.google.appinventor.components.annotations.SimpleEvent;
 import com.google.appinventor.components.annotations.SimpleFunction;
@@ -106,12 +109,15 @@ public class ChatInputBox extends AndroidViewComponent {
     private String currentConversationId = "";
     private String currentConversationContent = "";
     private final ArrayList<MenuAction> topMenuActions = new ArrayList<MenuAction>();
+    private final ArrayList<String> audioReadAloudListItems = new ArrayList<String>();
     private String copyChatMenuIcon = "📋";
     private String newChatMenuIcon = "✨";
     private String translateMenuIcon = "🌐";
     private String topMenuIconPath = "";
     private String drawerItemSelectIcon = "✅";
     private String drawerItemDeleteIcon = "🗑";
+    private PopupWindow audioReadAloudListPopup;
+    private String lastSelectedAudioReadAloudItem = "";
 
     public ChatInputBox(ComponentContainer container) {
         super(container);
@@ -244,6 +250,7 @@ public class ChatInputBox extends AndroidViewComponent {
         audioButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
+                toggleAudioReadAloudList(v, "audio");
                 AudioClicked();
             }
         });
@@ -251,7 +258,17 @@ public class ChatInputBox extends AndroidViewComponent {
         readAloudButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
+                toggleAudioReadAloudList(v, "readAloud");
                 ReadAloudRequested();
+            }
+        });
+        root.setOnTouchListener(new View.OnTouchListener() {
+            @Override
+            public boolean onTouch(View v, android.view.MotionEvent event) {
+                if (event.getAction() == android.view.MotionEvent.ACTION_DOWN) {
+                    dismissAudioReadAloudList();
+                }
+                return false;
             }
         });
 
@@ -747,6 +764,80 @@ public class ChatInputBox extends AndroidViewComponent {
         }
     }
 
+    @SimpleFunction(description = "Sets list items (newline separated) for the popup list shown by Audio and Read Aloud buttons.")
+    public void SetAudioReadAloudListItems(String newlineSeparatedItems) {
+        audioReadAloudListItems.clear();
+        if (newlineSeparatedItems == null) return;
+        String[] lines = newlineSeparatedItems.split("\\n");
+        for (String line : lines) {
+            String item = line == null ? "" : line.trim();
+            if (item.length() > 0) audioReadAloudListItems.add(item);
+        }
+        dismissAudioReadAloudList();
+    }
+
+    @SimpleFunction(description = "Returns the last selected item from the Audio/Read Aloud popup list.")
+    public String SelectedAudioReadAloudItem() {
+        return lastSelectedAudioReadAloudItem;
+    }
+
+    @SimpleFunction(description = "Returns AI textbox text cleaned for TextToSpeech: removes code fences, markdown headings, bullets and symbols.")
+    public String ReadableTextFromInput() {
+        return CleanTextForReadAloud(editText.getText().toString());
+    }
+
+    @SimpleFunction(description = "Cleans any text for TextToSpeech by removing markdown/code formatting and returning readable plain text.")
+    public String CleanTextForReadAloud(String text) {
+        if (text == null) return "";
+        String clean = text;
+        clean = clean.replaceAll("```[\\s\\S]*?```", " ");
+        clean = clean.replaceAll("`([^`]*)`", "$1");
+        clean = clean.replaceAll("(?m)^\\s*#{1,6}\\s*", "");
+        clean = clean.replaceAll("(?m)^\\s*[-*+]\\s+", "");
+        clean = clean.replaceAll("\\*\\*(.*?)\\*\\*", "$1");
+        clean = clean.replaceAll("\\*(.*?)\\*", "$1");
+        clean = clean.replaceAll("!\\[[^\\]]*\\]\\(([^)]+)\\)", " ");
+        clean = clean.replaceAll("\\[[^\\]]*\\]\\(([^)]+)\\)", "$1");
+        clean = clean.replaceAll("[*_#>`~]", " ");
+        clean = clean.replaceAll("\\s+", " ").trim();
+        return clean;
+    }
+
+    private void toggleAudioReadAloudList(View anchor, final String source) {
+        if (audioReadAloudListItems.size() == 0) return;
+        if (audioReadAloudListPopup != null && audioReadAloudListPopup.isShowing()) {
+            audioReadAloudListPopup.dismiss();
+            return;
+        }
+        ListView listView = new ListView(container.$context());
+        listView.setDividerHeight(1);
+        listView.setBackgroundColor(Color.rgb(32, 33, 35));
+        ArrayAdapter<String> adapter = new ArrayAdapter<String>(
+                container.$context(),
+                android.R.layout.simple_list_item_1,
+                audioReadAloudListItems
+        );
+        listView.setAdapter(adapter);
+        listView.setOnItemClickListener(new AdapterView.OnItemClickListener() {
+            @Override
+            public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
+                String selected = audioReadAloudListItems.get(position);
+                lastSelectedAudioReadAloudItem = selected;
+                AudioReadAloudListItemSelected(source, selected, position + 1);
+                dismissAudioReadAloudList();
+            }
+        });
+        audioReadAloudListPopup = new PopupWindow(listView, dp(220), ViewGroup.LayoutParams.WRAP_CONTENT, true);
+        audioReadAloudListPopup.setOutsideTouchable(true);
+        audioReadAloudListPopup.showAsDropDown(anchor, -dp(160), -dp(220));
+    }
+
+    private void dismissAudioReadAloudList() {
+        if (audioReadAloudListPopup != null && audioReadAloudListPopup.isShowing()) {
+            audioReadAloudListPopup.dismiss();
+        }
+    }
+
 
     private void showTopMenu(View anchor) {
         final PopupWindow popupWindow = new PopupWindow(container.$context());
@@ -917,6 +1008,10 @@ public class ChatInputBox extends AndroidViewComponent {
     }
     @SimpleEvent(description = "Triggered when AI text box is tapped.")
     public void AITextBoxClicked() { EventDispatcher.dispatchEvent(this, "AITextBoxClicked"); }
+    @SimpleEvent(description = "Triggered when an item from the Audio/Read Aloud popup list is selected. Returns source button, selected item, and 1-based index.")
+    public void AudioReadAloudListItemSelected(String source, String item, int index) {
+        EventDispatcher.dispatchEvent(this, "AudioReadAloudListItemSelected", source, item, index);
+    }
     @SimpleEvent(description = "Triggered when a custom title bar menu item is clicked. Returns item id.")
     public void TopMenuCustomItemClicked(int itemId) { EventDispatcher.dispatchEvent(this, "TopMenuCustomItemClicked", itemId); }
 
