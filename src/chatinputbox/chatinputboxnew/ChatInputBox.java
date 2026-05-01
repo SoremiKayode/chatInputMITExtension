@@ -935,6 +935,8 @@ public class ChatInputBox extends AndroidViewComponent {
     public void MicButtonImage(String value) { micButtonImagePath = value; applyStyle(); }
     @SimpleProperty(description = "Sets image asset path for read aloud button. Example: readaloud.png")
     public void ReadAloudButtonImage(String value) { readAloudButtonImagePath = value; applyStyle(); }
+    @SimpleProperty(description = "Returns image asset path for read aloud button.")
+    public String ReadAloudButtonImage() { return readAloudButtonImagePath; }
     @SimpleProperty(description = "Sets image asset path for title bar icon when drawer is closed (open icon).")
     public void DrawerOpenIconImage(String value) { drawerOpenIconPath = value; applyStyle(); }
     @SimpleProperty(description = "Sets image asset path for title bar icon when drawer is open (collapse icon).")
