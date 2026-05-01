@@ -63,7 +63,7 @@ public class ChatInputBox extends AndroidViewComponent {
     private final ImageView audioButton;
     private final ImageView sendButton;
     private final Handler handler = new Handler(Looper.getMainLooper());
-    private final HashMap<String, String> drawerContentMap = new HashMap<String, String>();
+    private final HashMap<String, JSONArray> drawerConversationMap = new HashMap<String, JSONArray>();
 
     private int backgroundColor = Color.rgb(32, 33, 35);
     private int messageBackgroundColor = Color.rgb(52, 53, 65);
@@ -279,10 +279,10 @@ public class ChatInputBox extends AndroidViewComponent {
         }
     }
 
-    @SimpleFunction(description = "Populate drawer from JSON array of dictionaries. First key becomes title; value becomes AI content.")
+    @SimpleFunction(description = "Populate drawer from JSON array of dictionaries: [{\"id\":[\"title\",\"content\"]}, ...]. Drawer shows title.")
     public void SetConversationsFromDictionaryList(String jsonList) {
         conversationList.removeAllViews();
-        drawerContentMap.clear();
+        drawerConversationMap.clear();
         try {
             JSONArray list = new JSONArray(jsonList);
             for (int i = 0; i < list.length(); i++) {
@@ -290,17 +290,25 @@ public class ChatInputBox extends AndroidViewComponent {
                 if (item == null || item.length() == 0) continue;
                 JSONArray names = item.names();
                 if (names == null || names.length() == 0) continue;
-                final String title = names.optString(0, "").trim();
-                if (title.length() == 0) continue;
-                final String content = item.optString(title, "");
-                drawerContentMap.put(title, content);
-                TextView row = makeConversationRow(title);
+                final String conversationId = names.optString(0, "").trim();
+                if (conversationId.length() == 0) continue;
+                JSONArray valueList = item.optJSONArray(conversationId);
+                if (valueList == null) continue;
+                final JSONArray conversationParts = valueList;
+                drawerConversationMap.put(conversationId, conversationParts);
+                String configuredTitle = conversationParts.optString(0, "").trim();
+                if (configuredTitle.length() == 0) {
+                    configuredTitle = ExtractTitleFromAIText(conversationParts.optString(1, ""));
+                }
+                final String drawerTitle = configuredTitle.length() == 0 ? conversationId : configuredTitle;
+                TextView row = makeConversationRow(drawerTitle);
                 row.setOnClickListener(new View.OnClickListener() {
                     @Override
                     public void onClick(View v) {
                         ClearMessages();
-                        DisplayAIMessage(content);
-                        ConversationSelected(title);
+                        String content = conversationParts.optString(1, "");
+                        if (content.length() > 0) DisplayAIMessage(content);
+                        ConversationSelected(conversationId, conversationParts.toString());
                     }
                 });
                 conversationList.addView(row);
@@ -313,7 +321,7 @@ public class ChatInputBox extends AndroidViewComponent {
     @SimpleFunction(description = "Backward compatible: set drawer titles only (newline separated).")
     public void SetConversations(String newlineSeparatedTitles) {
         conversationList.removeAllViews();
-        drawerContentMap.clear();
+        drawerConversationMap.clear();
         String[] items = newlineSeparatedTitles.split("\\n");
         for (int i = 0; i < items.length; i++) {
             final String title = items[i].trim();
@@ -322,16 +330,33 @@ public class ChatInputBox extends AndroidViewComponent {
             row.setOnClickListener(new View.OnClickListener() {
                 @Override
                 public void onClick(View v) {
-                    String content = drawerContentMap.containsKey(title) ? drawerContentMap.get(title) : "";
+                    JSONArray conversationParts = drawerConversationMap.get(title);
+                    String content = conversationParts == null ? "" : conversationParts.optString(1, "");
                     if (content.length() > 0) {
                         ClearMessages();
                         DisplayAIMessage(content);
                     }
-                    ConversationSelected(title);
+                    ConversationSelected(title, conversationParts == null ? "[]" : conversationParts.toString());
                 }
             });
             conversationList.addView(row);
         }
+    }
+
+    @SimpleFunction(description = "Extracts a title from AI text using first sentence/paragraph.")
+    public String ExtractTitleFromAIText(String aiText) {
+        if (aiText == null) return "";
+        String clean = aiText.trim();
+        if (clean.length() == 0) return "";
+        int paragraphBreak = clean.indexOf("\n\n");
+        int sentenceBreak = clean.indexOf(". ");
+        int cut = -1;
+        if (paragraphBreak >= 0 && sentenceBreak >= 0) cut = Math.min(paragraphBreak, sentenceBreak + 1);
+        else if (paragraphBreak >= 0) cut = paragraphBreak;
+        else if (sentenceBreak >= 0) cut = sentenceBreak + 1;
+        String title = (cut > 0 ? clean.substring(0, cut) : clean).replace("\n", " ").trim();
+        if (title.length() > 80) title = title.substring(0, 80).trim() + "...";
+        return title;
     }
 
     @SimpleFunction(description = "Clears all AI messages.")
@@ -375,10 +400,10 @@ public class ChatInputBox extends AndroidViewComponent {
 
             if (line.startsWith("# ") || line.startsWith("## ") || line.startsWith("### ") || line.startsWith("- ") || line.startsWith("* ") || isMarkdownImage(line) || isImageUrl(line.trim()) || line.trim().length() == 0) {
                 addParagraphIfAny(views, paragraph);
-                if (line.startsWith("# ")) views.add(makeText(line.substring(2), 24, true, false));
-                else if (line.startsWith("## ")) views.add(makeText(line.substring(3), 21, true, false));
-                else if (line.startsWith("### ")) views.add(makeText(line.substring(4), 18, true, false));
-                else if (line.startsWith("- ") || line.startsWith("* ")) views.add(makeText("• " + line.substring(2), 16, false, false));
+                if (line.startsWith("# ")) views.add(makeText(line.substring(2), 24, true, true));
+                else if (line.startsWith("## ")) views.add(makeText(line.substring(3), 21, true, true));
+                else if (line.startsWith("### ")) views.add(makeText(line.substring(4), 18, true, true));
+                else if (line.startsWith("- ") || line.startsWith("* ")) views.add(makeText("• " + line.substring(2), 16, false, true));
                 else if (isMarkdownImage(line)) views.add(makeImage(extractMarkdownImageUrl(line)));
                 else if (isImageUrl(line.trim())) views.add(makeImage(line.trim()));
                 continue;
@@ -615,8 +640,10 @@ public class ChatInputBox extends AndroidViewComponent {
     public void SendClicked(String prompt) { EventDispatcher.dispatchEvent(this, "SendClicked", prompt); }
     @SimpleEvent(description = "Triggered when the audio button is clicked.")
     public void AudioClicked() { EventDispatcher.dispatchEvent(this, "AudioClicked"); }
-    @SimpleEvent(description = "Triggered when user picks a conversation in the left drawer.")
-    public void ConversationSelected(String title) { EventDispatcher.dispatchEvent(this, "ConversationSelected", title); }
+    @SimpleEvent(description = "Triggered when user picks a conversation in the left drawer. Returns conversation id and value list JSON.")
+    public void ConversationSelected(String conversationId, String valueListJson) {
+        EventDispatcher.dispatchEvent(this, "ConversationSelected", conversationId, valueListJson);
+    }
     @SimpleEvent(description = "Triggered when user taps new chat button in the drawer.")
     public void NewChatClicked() { EventDispatcher.dispatchEvent(this, "NewChatClicked"); }
 
