@@ -1159,12 +1159,3 @@ public class ChatInputBox extends AndroidViewComponent {
         }
     }
 }
-        drawerScrim = new View(container.$context());
-        drawerScrim.setBackgroundColor(Color.argb(110, 0, 0, 0));
-        drawerScrim.setVisibility(View.GONE);
-        drawerScrim.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                SetDrawerExpanded(false);
-            }
-        });
