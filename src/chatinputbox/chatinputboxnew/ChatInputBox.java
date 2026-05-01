@@ -9,6 +9,7 @@ import android.graphics.drawable.GradientDrawable;
 import android.text.Editable;
 import android.text.SpannableString;
 import android.text.Spanned;
+import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.text.Html;
@@ -18,6 +19,7 @@ import android.text.TextWatcher;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.WindowManager;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
@@ -892,10 +894,19 @@ public class ChatInputBox extends AndroidViewComponent {
         });
         int popupWidth = Math.max(dp(220), anchor.getWidth());
         audioReadAloudListPopup = new PopupWindow(listView, popupWidth, ViewGroup.LayoutParams.WRAP_CONTENT, true);
-        audioReadAloudListPopup.setOutsideTouchable(true);
-        audioReadAloudListPopup.setFocusable(true);
-        audioReadAloudListPopup.setElevation(dp(8));
+        configurePopupWindow(audioReadAloudListPopup);
         audioReadAloudListPopup.showAsDropDown(anchor, 0, dp(6));
+    }
+
+
+    private void configurePopupWindow(PopupWindow popupWindow) {
+        popupWindow.setOutsideTouchable(true);
+        popupWindow.setFocusable(true);
+        popupWindow.setClippingEnabled(false);
+        popupWindow.setElevation(dp(12));
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            popupWindow.setWindowLayoutType(WindowManager.LayoutParams.TYPE_APPLICATION_SUB_PANEL);
+        }
     }
 
     private void dismissAudioReadAloudList() {
@@ -936,8 +947,7 @@ public class ChatInputBox extends AndroidViewComponent {
             }
         }
         popupWindow.setContentView(menuRoot);
-        popupWindow.setOutsideTouchable(true);
-        popupWindow.setFocusable(true);
+        configurePopupWindow(popupWindow);
         popupWindow.setWidth(dp(200));
         popupWindow.setHeight(ViewGroup.LayoutParams.WRAP_CONTENT);
         popupWindow.showAsDropDown(anchor, -dp(140), dp(6));
