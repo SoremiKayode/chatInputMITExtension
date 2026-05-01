@@ -6,6 +6,7 @@ import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
+import android.text.Editable;
 import android.text.SpannableString;
 import android.text.Spanned;
 import android.os.Handler;
@@ -13,8 +14,10 @@ import android.os.Looper;
 import android.text.Html;
 import android.text.TextUtils;
 import android.text.style.ForegroundColorSpan;
+import android.text.TextWatcher;
 import android.view.Gravity;
 import android.view.View;
+import android.view.MenuItem;
 import android.view.ViewGroup;
 import android.content.ClipData;
 import android.content.ClipboardManager;
@@ -25,6 +28,8 @@ import android.widget.HorizontalScrollView;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
+import android.widget.Toast;
+import android.widget.PopupMenu;
 import android.widget.TextView;
 
 import com.google.appinventor.components.annotations.SimpleEvent;
@@ -49,6 +54,8 @@ public class ChatInputBox extends AndroidViewComponent {
     private final LinearLayout titleBar;
     private final ImageView drawerToggleButton;
     private final TextView titleTextView;
+    private final LinearLayout titleActions;
+    private final ImageView topMenuButton;
     private final LinearLayout screenLayout;
     private final FrameLayout chatContainer;
     private final LinearLayout chatPane;
@@ -61,6 +68,7 @@ public class ChatInputBox extends AndroidViewComponent {
     private final LinearLayout inputBar;
     private final EditText editText;
     private final ImageView audioButton;
+    private final ImageView readAloudButton;
     private final ImageView sendButton;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final HashMap<String, JSONArray> drawerConversationMap = new HashMap<String, JSONArray>();
@@ -74,7 +82,8 @@ public class ChatInputBox extends AndroidViewComponent {
     private int buttonColor = Color.WHITE;
     private int codeBackgroundColor = Color.rgb(20, 20, 20);
     private int drawerBackgroundColor = Color.rgb(32, 33, 35);
-    private int titleBarBackgroundColor = Color.argb(220, 98, 65, 140);
+    private int titleBarBackgroundColor = Color.rgb(30, 30, 30);
+    private int cardBackgroundColor = Color.rgb(42, 43, 56);
 
     private int cornerRadiusDp = 24;
     private String hint = "Ask me anything";
@@ -90,6 +99,10 @@ public class ChatInputBox extends AndroidViewComponent {
     private boolean showSendWhileGenerating = true;
     private boolean isGenerating = false;
     private String sendButtonBusyImagePath = "";
+    private boolean showReadAloudButton = false;
+    private boolean autoShowReadAloudWhenText = true;
+    private String currentConversationId = "";
+    private String currentConversationContent = "";
 
     public ChatInputBox(ComponentContainer container) {
         super(container);
@@ -109,11 +122,15 @@ public class ChatInputBox extends AndroidViewComponent {
         titleTextView.setTypeface(Typeface.DEFAULT_BOLD);
         titleTextView.setPadding(dp(10), 0, 0, 0);
 
-        titleBar.addView(drawerToggleButton, new LinearLayout.LayoutParams(dp(40), dp(40)));
-        titleBar.addView(titleTextView, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-        ));
+        titleActions = new LinearLayout(container.$context());
+        titleActions.setOrientation(LinearLayout.HORIZONTAL);
+        titleActions.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
+        topMenuButton = makeImageButton();
+
+        titleBar.addView(drawerToggleButton, new LinearLayout.LayoutParams(dp(44), dp(44)));
+        titleBar.addView(titleTextView, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        titleActions.addView(topMenuButton, new LinearLayout.LayoutParams(dp(46), dp(46)));
+        titleBar.addView(titleActions, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         screenLayout = new LinearLayout(container.$context());
         screenLayout.setOrientation(LinearLayout.HORIZONTAL);
@@ -187,6 +204,7 @@ public class ChatInputBox extends AndroidViewComponent {
         ));
 
         audioButton = makeImageButton();
+        readAloudButton = makeImageButton();
         sendButton = makeImageButton();
 
         drawerToggleButton.setOnClickListener(new View.OnClickListener() {
@@ -196,14 +214,42 @@ public class ChatInputBox extends AndroidViewComponent {
             }
         });
 
-        inputBar.addView(audioButton, new LinearLayout.LayoutParams(dp(40), dp(40)));
-        inputBar.addView(sendButton, new LinearLayout.LayoutParams(dp(40), dp(40)));
+        topMenuButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                showTopMenu(v);
+            }
+        });
+
+        editText.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                AITextBoxClicked();
+            }
+        });
+
+        inputBar.addView(audioButton, new LinearLayout.LayoutParams(dp(46), dp(46)));
+        inputBar.addView(readAloudButton, new LinearLayout.LayoutParams(dp(46), dp(46)));
+        inputBar.addView(sendButton, new LinearLayout.LayoutParams(dp(46), dp(46)));
 
         audioButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 AudioClicked();
             }
+        });
+
+        readAloudButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                ReadAloudClicked(editText.getText().toString());
+            }
+        });
+
+        editText.addTextChangedListener(new TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) { updateReadAloudVisibility(); }
+            @Override public void afterTextChanged(Editable s) {}
         });
 
         sendButton.setOnClickListener(new View.OnClickListener() {
@@ -285,7 +331,7 @@ public class ChatInputBox extends AndroidViewComponent {
         drawerConversationMap.clear();
         try {
             JSONArray list = new JSONArray(jsonList);
-            for (int i = 0; i < list.length(); i++) {
+            for (int i = list.length() - 1; i >= 0; i--) {
                 JSONObject item = list.optJSONObject(i);
                 if (item == null || item.length() == 0) continue;
                 JSONArray names = item.names();
@@ -307,8 +353,17 @@ public class ChatInputBox extends AndroidViewComponent {
                     public void onClick(View v) {
                         ClearMessages();
                         String content = conversationParts.optString(1, "");
+                        currentConversationId = conversationId;
+                        currentConversationContent = content;
                         if (content.length() > 0) DisplayAIMessage(content);
                         ConversationSelected(conversationId, conversationParts.toString());
+                    }
+                });
+                row.setOnLongClickListener(new View.OnLongClickListener() {
+                    @Override
+                    public boolean onLongClick(View v) {
+                        showDrawerItemAction(row, conversationId, drawerTitle, conversationParts.optString(1, ""));
+                        return true;
                     }
                 });
                 conversationList.addView(row);
@@ -323,7 +378,7 @@ public class ChatInputBox extends AndroidViewComponent {
         conversationList.removeAllViews();
         drawerConversationMap.clear();
         String[] items = newlineSeparatedTitles.split("\\n");
-        for (int i = 0; i < items.length; i++) {
+        for (int i = items.length - 1; i >= 0; i--) {
             final String title = items[i].trim();
             if (title.length() == 0) continue;
             TextView row = makeConversationRow(title);
@@ -440,15 +495,16 @@ public class ChatInputBox extends AndroidViewComponent {
         row.setText(text);
         row.setEllipsize(TextUtils.TruncateAt.END);
         row.setSingleLine(true);
-        row.setTextSize(13);
+        row.setTextSize(14);
         row.setTextColor(textColor);
-        row.setPadding(dp(12), dp(10), dp(12), dp(10));
+        row.setPadding(dp(14), dp(12), dp(14), dp(12));
         GradientDrawable bg = new GradientDrawable();
-        bg.setColor(Color.rgb(52, 53, 65));
-        bg.setCornerRadius(dp(10));
+        bg.setColor(cardBackgroundColor);
+        bg.setCornerRadius(dp(12));
+        bg.setStroke(dp(1), Color.rgb(75, 76, 94));
         row.setBackground(bg);
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        lp.setMargins(0, dp(4), 0, dp(4));
+        lp.setMargins(0, dp(5), 0, dp(5));
         row.setLayoutParams(lp);
         return row;
     }
@@ -563,10 +619,110 @@ public class ChatInputBox extends AndroidViewComponent {
     private String extractMarkdownImageUrl(String line) { int start = line.indexOf("]("); return line.substring(start + 2, line.length() - 1); }
     private boolean isImageUrl(String line) { String lower = line.toLowerCase(); return lower.startsWith("http") && (lower.endsWith(".png") || lower.endsWith(".jpg") || lower.endsWith(".jpeg") || lower.endsWith(".gif") || lower.endsWith(".webp")); }
 
+
+
+    private void showDrawerItemAction(final TextView row, final String id, final String title, final String content) {
+        final TextView action = new TextView(container.$context());
+        action.setText("Select");
+        action.setTextColor(Color.WHITE);
+        action.setTextSize(12);
+        action.setPadding(dp(10), dp(6), dp(10), dp(6));
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(Color.rgb(75, 120, 230));
+        bg.setCornerRadius(dp(8));
+        action.setBackground(bg);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.gravity = Gravity.END;
+        action.setLayoutParams(lp);
+        final ViewGroup parent = (ViewGroup) row.getParent();
+        int index = parent.indexOfChild(row);
+        if (index + 1 < parent.getChildCount() && parent.getChildAt(index + 1) instanceof TextView && "Select".contentEquals(((TextView) parent.getChildAt(index + 1)).getText())) {
+            parent.removeViewAt(index + 1);
+        }
+        parent.addView(action, index + 1);
+        action.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                DrawerItemLongClicked(id, title, content);
+                parent.removeView(action);
+            }
+        });
+    }
+
+    private void CopyCurrentChatToClipboard() {
+        StringBuilder chatText = new StringBuilder();
+        for (int i = 0; i < messagesBox.getChildCount(); i++) {
+            View child = messagesBox.getChildAt(i);
+            if (child instanceof TextView) {
+                String t = ((TextView) child).getText().toString().trim();
+                if (t.length() > 0) chatText.append(t).append("\n\n");
+            }
+        }
+        String data = chatText.toString().trim();
+        CopyToClipboard("chat", data.length() == 0 ? "No chat content yet." : data);
+        ChatCopied(data);
+    }
+
+    @SimpleFunction(description = "Copies text to the clipboard.")
+    public void CopyToClipboard(String label, String content) {
+        ClipboardManager clipboard = (ClipboardManager) container.$context().getSystemService(Context.CLIPBOARD_SERVICE);
+        clipboard.setPrimaryClip(ClipData.newPlainText(label, content));
+        Toast.makeText(container.$context(), "Copied", Toast.LENGTH_SHORT).show();
+    }
+
+    @SimpleFunction(description = "Creates JSON for a drawer item with id, title and content.")
+    public String BuildConversationItem(String id, String title, String content) {
+        try {
+            JSONObject root = new JSONObject();
+            JSONArray values = new JSONArray();
+            values.put(title == null ? "" : title);
+            values.put(content == null ? "" : content);
+            root.put(id == null ? "" : id, values);
+            return root.toString();
+        } catch (Exception e) {
+            return "{}";
+        }
+    }
+
+
+    private void showTopMenu(View anchor) {
+        PopupMenu menu = new PopupMenu(container.$context(), anchor);
+        menu.getMenu().add(0, 1, 1, "Copy chat");
+        menu.getMenu().add(0, 2, 2, "New chat");
+        menu.getMenu().add(0, 3, 3, "Translate");
+        menu.setOnMenuItemClickListener(new PopupMenu.OnMenuItemClickListener() {
+            @Override
+            public boolean onMenuItemClick(MenuItem item) {
+                if (item.getItemId() == 1) {
+                    CopyCurrentChatToClipboard();
+                    TopMenuCopyClicked();
+                    return true;
+                }
+                if (item.getItemId() == 2) {
+                    NewChatClicked();
+                    return true;
+                }
+                if (item.getItemId() == 3) {
+                    TranslateRequested(currentConversationId, editText.getText().toString().trim().length() > 0 ? editText.getText().toString() : currentConversationContent);
+                    return true;
+                }
+                return false;
+            }
+        });
+        menu.show();
+    }
+
+    private void updateReadAloudVisibility() {
+        boolean hasText = editText.getText() != null && editText.getText().toString().trim().length() > 0;
+        boolean visible = showReadAloudButton || (autoShowReadAloudWhenText && hasText);
+        readAloudButton.setVisibility(visible ? View.VISIBLE : View.GONE);
+    }
+
     private void applyStyle() {
         root.setBackgroundColor(backgroundColor);
         drawer.setBackgroundColor(drawerBackgroundColor);
         titleBar.setBackgroundColor(titleBarBackgroundColor);
+        titleBar.setElevation(dp(3));
         titleTextView.setText(titleBarText);
         titleTextView.setTextColor(textColor);
         refreshDrawerToggleIcon();
@@ -587,6 +743,9 @@ public class ChatInputBox extends AndroidViewComponent {
 
         setButtonAsset(sendButton, sendButtonImagePath, "Send");
         setButtonAsset(audioButton, micButtonImagePath, "Mic");
+        setButtonAsset(topMenuButton, "", "⋮");
+        setButtonAsset(readAloudButton, "", "🔊");
+        updateReadAloudVisibility();
         refreshSendButtonState();
         updateDrawerLayoutWidth();
     }
@@ -646,6 +805,20 @@ public class ChatInputBox extends AndroidViewComponent {
     }
     @SimpleEvent(description = "Triggered when user taps new chat button in the drawer.")
     public void NewChatClicked() { EventDispatcher.dispatchEvent(this, "NewChatClicked"); }
+    @SimpleEvent(description = "Triggered when copy chat action is clicked.")
+    public void ChatCopied(String content) { EventDispatcher.dispatchEvent(this, "ChatCopied", content); }
+    @SimpleEvent(description = "Triggered when copy action is clicked from the top menu.")
+    public void TopMenuCopyClicked() { EventDispatcher.dispatchEvent(this, "TopMenuCopyClicked"); }
+    @SimpleEvent(description = "Triggered when translate menu option is clicked. Returns code/id and content.")
+    public void TranslateRequested(String code, String content) { EventDispatcher.dispatchEvent(this, "TranslateRequested", code, content); }
+    @SimpleEvent(description = "Triggered when read aloud icon is clicked.")
+    public void ReadAloudClicked(String text) { EventDispatcher.dispatchEvent(this, "ReadAloudClicked", text); }
+    @SimpleEvent(description = "Triggered when a drawer item action is selected after long click.")
+    public void DrawerItemLongClicked(String conversationId, String title, String content) {
+        EventDispatcher.dispatchEvent(this, "DrawerItemLongClicked", conversationId, title, content);
+    }
+    @SimpleEvent(description = "Triggered when AI text box is tapped.")
+    public void AITextBoxClicked() { EventDispatcher.dispatchEvent(this, "AITextBoxClicked"); }
 
     @SimpleFunction(description = "Returns the current text inside the input box.")
     public String Text() { return editText.getText().toString(); }
@@ -672,6 +845,10 @@ public class ChatInputBox extends AndroidViewComponent {
     public void DisableSendWhileGenerating(boolean value) { lockSendWhileGenerating = value; refreshSendButtonState(); }
     @SimpleProperty(description = "If true, send button is shown while AI is generating. If false it is hidden.")
     public void ShowSendWhileGenerating(boolean value) { showSendWhileGenerating = value; refreshSendButtonState(); }
+    @SimpleProperty(description = "Controls whether read aloud button is always visible.")
+    public void ShowReadAloudButton(boolean value) { showReadAloudButton = value; updateReadAloudVisibility(); }
+    @SimpleProperty(description = "If true, read aloud button appears when AI textbox has content.")
+    public void AutoShowReadAloudWhenText(boolean value) { autoShowReadAloudWhenText = value; updateReadAloudVisibility(); }
     @SimpleProperty(description = "Sets the hint text shown when the input is empty.")
     public void Hint(String value) { hint = value; applyStyle(); }
     @SimpleProperty(description = "Returns the hint text.")
