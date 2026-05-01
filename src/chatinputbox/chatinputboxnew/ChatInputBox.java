@@ -108,6 +108,9 @@ public class ChatInputBox extends AndroidViewComponent {
     private String copyChatMenuIcon = "📋";
     private String newChatMenuIcon = "✨";
     private String translateMenuIcon = "🌐";
+    private String topMenuIconPath = "";
+    private String drawerItemSelectIcon = "✅";
+    private String drawerItemDeleteIcon = "🗑";
 
     public ChatInputBox(ComponentContainer container) {
         super(container);
@@ -565,12 +568,15 @@ public class ChatInputBox extends AndroidViewComponent {
     }
     private CharSequence highlightCode(String code) {
         SpannableString span = new SpannableString(code);
+        applySpanByRegex(span, code, "\\b(import|from|package|using|include|require|module|namespace|export)\\b", 0, Color.rgb(139, 233, 253));
         applySpanByRegex(span, code, "\\b(class|interface|enum|struct)\\s+([A-Za-z_][A-Za-z0-9_]*)", 2, Color.rgb(255, 121, 198));
-        applySpanByRegex(span, code, "\\b(function|fun|def|void|int|float|double|String|boolean|var|let|const)\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*\\(", 2, Color.rgb(80, 250, 123));
-        applySpanByRegex(span, code, "\\b(if|else|for|while|switch|case|when|do|break|continue|return|try|catch|finally)\\b", 0, Color.rgb(189, 147, 249));
+        applySpanByRegex(span, code, "\\b(function|fun|def|void|int|float|double|String|boolean|var|let|const|public|private|protected|static|async)\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*\\(", 2, Color.rgb(80, 250, 123));
+        applySpanByRegex(span, code, "\\b(for|while|do|foreach)\\b", 0, Color.rgb(255, 184, 108));
+        applySpanByRegex(span, code, "\\b(if|else|switch|case|when|break|continue|return|try|catch|finally)\\b", 0, Color.rgb(189, 147, 249));
+        applySpanByRegex(span, code, "\\b([A-Za-z_][A-Za-z0-9_]*)\\s*=", 1, Color.rgb(255, 121, 198));
+        applySpanByRegex(span, code, "=\\s*([^\\n;]+)", 1, Color.rgb(241, 250, 140));
         applySpanByRegex(span, code, "\\b(true|false|null|None|undefined|\\d+(?:\\.\\d+)?)\\b", 0, Color.rgb(241, 250, 140));
-        applySpanByRegex(span, code, "[{}]", 0, Color.rgb(255, 184, 108));
-        applySpanByRegex(span, code, "\\b([A-Za-z_][A-Za-z0-9_]*)\\s*=", 1, Color.rgb(139, 233, 253));
+        applySpanByRegex(span, code, "[{}()]", 0, Color.rgb(98, 114, 164));
         return span;
     }
 
@@ -641,7 +647,7 @@ public class ChatInputBox extends AndroidViewComponent {
 
     private void showDrawerItemAction(final TextView row, final String id, final String title, final String content) {
         final TextView action = new TextView(container.$context());
-        action.setText("Select");
+        action.setText(drawerItemSelectIcon + " Select");
         action.setTextColor(Color.WHITE);
         action.setTextSize(12);
         action.setPadding(dp(10), dp(6), dp(10), dp(6));
@@ -654,15 +660,40 @@ public class ChatInputBox extends AndroidViewComponent {
         action.setLayoutParams(lp);
         final ViewGroup parent = (ViewGroup) row.getParent();
         int index = parent.indexOfChild(row);
-        if (index + 1 < parent.getChildCount() && parent.getChildAt(index + 1) instanceof TextView && "Select".contentEquals(((TextView) parent.getChildAt(index + 1)).getText())) {
+        if (index + 1 < parent.getChildCount() && parent.getChildAt(index + 1) instanceof TextView) {
             parent.removeViewAt(index + 1);
         }
+        final TextView deleteAction = new TextView(container.$context());
+        deleteAction.setText(drawerItemDeleteIcon + " Delete");
+        deleteAction.setTextColor(Color.WHITE);
+        deleteAction.setTextSize(12);
+        deleteAction.setPadding(dp(10), dp(6), dp(10), dp(6));
+        GradientDrawable deleteBg = new GradientDrawable();
+        deleteBg.setColor(Color.rgb(180, 55, 55));
+        deleteBg.setCornerRadius(dp(8));
+        deleteAction.setBackground(deleteBg);
+        LinearLayout.LayoutParams deleteLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        deleteLp.gravity = Gravity.END;
+        deleteLp.setMargins(0, dp(4), 0, 0);
+        deleteAction.setLayoutParams(deleteLp);
         parent.addView(action, index + 1);
+        parent.addView(deleteAction, index + 2);
         action.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 DrawerItemLongClicked(id, title, content);
                 parent.removeView(action);
+                parent.removeView(deleteAction);
+            }
+        });
+        deleteAction.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                parent.removeView(row);
+                parent.removeView(action);
+                parent.removeView(deleteAction);
+                drawerConversationMap.remove(id);
+                DrawerItemLongClicked(id, title, content);
             }
         });
     }
@@ -708,7 +739,7 @@ public class ChatInputBox extends AndroidViewComponent {
         LinearLayout menuRoot = new LinearLayout(container.$context());
         menuRoot.setOrientation(LinearLayout.VERTICAL);
         GradientDrawable bg = new GradientDrawable();
-        bg.setColor(Color.rgb(20, 20, 20));
+        bg.setColor(Color.rgb(12, 12, 12));
         bg.setCornerRadius(dp(10));
         menuRoot.setBackground(bg);
         menuRoot.setPadding(dp(10), dp(10), dp(10), dp(10));
@@ -796,7 +827,7 @@ public class ChatInputBox extends AndroidViewComponent {
 
         setButtonAsset(sendButton, sendButtonImagePath, "Send");
         setButtonAsset(audioButton, micButtonImagePath, "Mic");
-        setButtonAsset(topMenuButton, "", "⋮");
+        setButtonAsset(topMenuButton, topMenuIconPath, "⋮");
         setButtonAsset(readAloudButton, "", "🔊");
         updateReadAloudVisibility();
         refreshSendButtonState();
@@ -910,6 +941,12 @@ public class ChatInputBox extends AndroidViewComponent {
     public void NewChatMenuIcon(String value) { newChatMenuIcon = value == null ? "" : value; resetDefaultTopMenuActions(); }
     @SimpleProperty(description = "Icon text for Translate item in title bar menu.")
     public void TranslateMenuIcon(String value) { translateMenuIcon = value == null ? "" : value; resetDefaultTopMenuActions(); }
+    @SimpleProperty(description = "Sets image asset path for title bar menu icon.")
+    public void TopMenuIconImage(String value) { topMenuIconPath = value; applyStyle(); }
+    @SimpleProperty(description = "Sets icon text for drawer long-click select action.")
+    public void DrawerItemSelectIcon(String value) { drawerItemSelectIcon = value == null ? "✅" : value; }
+    @SimpleProperty(description = "Sets icon text for drawer long-click delete action.")
+    public void DrawerItemDeleteIcon(String value) { drawerItemDeleteIcon = value == null ? "🗑" : value; }
     @SimpleFunction(description = "Adds a custom menu item to title bar menu.")
     public void AddTitleBarMenuItem(int id, String label, String iconText) { topMenuActions.add(new MenuAction(id, label, iconText)); }
     @SimpleProperty(description = "Sets the hint text shown when the input is empty.")
