@@ -160,7 +160,7 @@ public class ChatInputBox extends AndroidViewComponent {
         drawerScrim.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                DrawerExpanded(false);
+                SetDrawerExpanded(false);
             }
         });
 
