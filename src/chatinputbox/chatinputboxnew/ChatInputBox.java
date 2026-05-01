@@ -64,6 +64,7 @@ public class ChatInputBox extends AndroidViewComponent {
     private final FrameLayout chatContainer;
     private final LinearLayout chatPane;
     private final LinearLayout drawer;
+    private final View drawerScrim;
     private final ScrollView drawerScroll;
     private final LinearLayout conversationList;
     private final TextView newChatButton;
@@ -110,6 +111,7 @@ public class ChatInputBox extends AndroidViewComponent {
     private String currentConversationContent = "";
     private final ArrayList<MenuAction> topMenuActions = new ArrayList<MenuAction>();
     private final ArrayList<String> audioReadAloudListItems = new ArrayList<String>();
+    private final ArrayList<String> audioReadAloudReturnValues = new ArrayList<String>();
     private String copyChatMenuIcon = "📋";
     private String newChatMenuIcon = "✨";
     private String translateMenuIcon = "🌐";
@@ -296,6 +298,10 @@ public class ChatInputBox extends AndroidViewComponent {
         ));
 
         chatContainer.addView(chatPane, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+        ));
+        chatContainer.addView(drawerScrim, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
         ));
@@ -764,14 +770,53 @@ public class ChatInputBox extends AndroidViewComponent {
         }
     }
 
-    @SimpleFunction(description = "Sets list items (newline separated) for the popup list shown by Audio and Read Aloud buttons.")
-    public void SetAudioReadAloudListItems(String newlineSeparatedItems) {
+    @SimpleFunction(description = "Sets popup list items from dictionary JSON, list JSON, comma-separated string, or newline-separated string.")
+    public void SetAudioReadAloudListItems(String rawItems) {
         audioReadAloudListItems.clear();
-        if (newlineSeparatedItems == null) return;
-        String[] lines = newlineSeparatedItems.split("\\n");
-        for (String line : lines) {
-            String item = line == null ? "" : line.trim();
-            if (item.length() > 0) audioReadAloudListItems.add(item);
+        audioReadAloudReturnValues.clear();
+        if (rawItems == null) return;
+        String text = rawItems.trim();
+        if (text.length() == 0) return;
+
+        boolean parsed = false;
+        try {
+            if (text.startsWith("{") && text.endsWith("}")) {
+                JSONObject object = new JSONObject(text);
+                JSONArray names = object.names();
+                if (names != null) {
+                    for (int i = 0; i < names.length(); i++) {
+                        String key = names.optString(i, "");
+                        if (key == null) key = "";
+                        key = key.trim();
+                        if (key.length() == 0) continue;
+                        String value = object.optString(key, "").trim();
+                        audioReadAloudListItems.add(value);
+                        audioReadAloudReturnValues.add(key);
+                    }
+                }
+                parsed = true;
+            } else if (text.startsWith("[") && text.endsWith("]")) {
+                JSONArray array = new JSONArray(text);
+                for (int i = 0; i < array.length(); i++) {
+                    String value = String.valueOf(array.opt(i)).trim();
+                    if (value.length() == 0 || "null".equalsIgnoreCase(value)) continue;
+                    audioReadAloudListItems.add(value);
+                    audioReadAloudReturnValues.add(value);
+                }
+                parsed = true;
+            }
+        } catch (Exception ignored) {
+            parsed = false;
+        }
+
+        if (!parsed) {
+            String[] parts = text.contains(",") ? text.split("\\s*,\\s*") : text.split("\\n");
+            for (String part : parts) {
+                String item = part == null ? "" : part.trim();
+                if (item.length() == 0) continue;
+                audioReadAloudListItems.add(item);
+                audioReadAloudReturnValues.add(item);
+            }
         }
         dismissAudioReadAloudList();
     }
@@ -816,12 +861,22 @@ public class ChatInputBox extends AndroidViewComponent {
                 container.$context(),
                 android.R.layout.simple_list_item_1,
                 audioReadAloudListItems
-        );
+        ) {
+            @Override
+            public View getView(int position, View convertView, ViewGroup parent) {
+                View view = super.getView(position, convertView, parent);
+                if (view instanceof TextView) {
+                    ((TextView) view).setTextColor(Color.WHITE);
+                    ((TextView) view).setBackgroundColor(Color.rgb(32, 33, 35));
+                }
+                return view;
+            }
+        };
         listView.setAdapter(adapter);
         listView.setOnItemClickListener(new AdapterView.OnItemClickListener() {
             @Override
             public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
-                String selected = audioReadAloudListItems.get(position);
+                String selected = position < audioReadAloudReturnValues.size() ? audioReadAloudReturnValues.get(position) : audioReadAloudListItems.get(position);
                 lastSelectedAudioReadAloudItem = selected;
                 AudioReadAloudListItemSelected(source, selected, position + 1);
                 dismissAudioReadAloudList();
@@ -910,6 +965,7 @@ public class ChatInputBox extends AndroidViewComponent {
     private void applyStyle() {
         root.setBackgroundColor(backgroundColor);
         drawer.setBackgroundColor(drawerBackgroundColor);
+        drawer.setElevation(dp(12));
         titleBar.setBackgroundColor(titleBarBackgroundColor);
         titleBar.setElevation(dp(3));
         titleTextView.setText(titleBarText);
@@ -956,6 +1012,7 @@ public class ChatInputBox extends AndroidViewComponent {
         params.width = getDrawerExpandedWidthPx();
         drawer.setLayoutParams(params);
         drawer.setVisibility(drawerExpanded ? View.VISIBLE : View.GONE);
+        drawerScrim.setVisibility(drawerExpanded ? View.VISIBLE : View.GONE);
         refreshDrawerToggleIcon();
     }
 
@@ -1021,6 +1078,12 @@ public class ChatInputBox extends AndroidViewComponent {
     public void SetText(String text) { editText.setText(text); }
     @SimpleFunction(description = "Clears the input box.")
     public void Clear() { editText.setText(""); }
+    @SimpleFunction(description = "Returns the text inside the chat input box.")
+    public String GetChatInputText() { return Text(); }
+    @SimpleFunction(description = "Sets the text inside the chat input box.")
+    public void SetChatInputText(String text) { SetText(text); }
+    @SimpleFunction(description = "Clears the chat input box.")
+    public void ClearChatInputText() { Clear(); }
 
     @SimpleProperty(description = "Sets image asset path for send button. Example: send.png")
     public void SendButtonImage(String value) { sendButtonImagePath = value; applyStyle(); }
@@ -1096,3 +1159,12 @@ public class ChatInputBox extends AndroidViewComponent {
         }
     }
 }
+        drawerScrim = new View(container.$context());
+        drawerScrim.setBackgroundColor(Color.argb(110, 0, 0, 0));
+        drawerScrim.setVisibility(View.GONE);
+        drawerScrim.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                SetDrawerExpanded(false);
+            }
+        });
