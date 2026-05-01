@@ -16,6 +16,7 @@ import android.text.TextUtils;
 import android.text.style.ForegroundColorSpan;
 import android.text.TextWatcher;
 import android.view.Gravity;
+import android.graphics.Rect;
 import android.view.View;
 import android.view.ViewGroup;
 import android.content.ClipData;
@@ -904,7 +905,29 @@ public class ChatInputBox extends AndroidViewComponent {
             @Override
             public void run() {
                 if (!anchor.isAttachedToWindow()) return;
-                popupWindow.showAsDropDown(anchor, xoff, yoff);
+
+                int popupWidth = popupWindow.getWidth();
+                if (popupWidth <= 0) {
+                    popupWidth = Math.max(dp(200), anchor.getWidth());
+                    popupWindow.setWidth(popupWidth);
+                }
+
+                int[] anchorLocation = new int[2];
+                anchor.getLocationOnScreen(anchorLocation);
+                int anchorX = anchorLocation[0];
+                int anchorY = anchorLocation[1];
+                int anchorBottom = anchorY + anchor.getHeight();
+
+                Rect visibleFrame = new Rect();
+                root.getWindowVisibleDisplayFrame(visibleFrame);
+
+                int desiredX = anchorX + xoff;
+                int minX = visibleFrame.left + dp(8);
+                int maxX = Math.max(minX, visibleFrame.right - popupWidth - dp(8));
+                int clampedX = Math.max(minX, Math.min(desiredX, maxX));
+
+                int y = anchorBottom + yoff;
+                popupWindow.showAtLocation(root, Gravity.TOP | Gravity.START, clampedX, y);
             }
         });
     }
