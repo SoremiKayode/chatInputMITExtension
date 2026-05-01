@@ -890,9 +890,12 @@ public class ChatInputBox extends AndroidViewComponent {
                 dismissAudioReadAloudList();
             }
         });
-        audioReadAloudListPopup = new PopupWindow(listView, dp(220), ViewGroup.LayoutParams.WRAP_CONTENT, true);
+        int popupWidth = Math.max(dp(220), anchor.getWidth());
+        audioReadAloudListPopup = new PopupWindow(listView, popupWidth, ViewGroup.LayoutParams.WRAP_CONTENT, true);
         audioReadAloudListPopup.setOutsideTouchable(true);
-        audioReadAloudListPopup.showAsDropDown(anchor, -dp(160), -dp(220));
+        audioReadAloudListPopup.setFocusable(true);
+        audioReadAloudListPopup.setElevation(dp(8));
+        audioReadAloudListPopup.showAsDropDown(anchor, 0, dp(6));
     }
 
     private void dismissAudioReadAloudList() {
