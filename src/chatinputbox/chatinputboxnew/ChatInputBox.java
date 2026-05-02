@@ -16,7 +16,6 @@ import android.text.TextUtils;
 import android.text.style.ForegroundColorSpan;
 import android.text.TextWatcher;
 import android.view.Gravity;
-import android.graphics.Rect;
 import android.view.View;
 import android.view.ViewGroup;
 import android.content.ClipData;
@@ -947,40 +946,8 @@ public class ChatInputBox extends AndroidViewComponent {
                     popupWindow.setWidth(popupWidth);
                 }
 
-                int[] anchorLocation = new int[2];
-                anchor.getLocationOnScreen(anchorLocation);
-                int anchorX = anchorLocation[0];
-                int anchorY = anchorLocation[1];
-
-                Rect visibleFrame = new Rect();
-                root.getWindowVisibleDisplayFrame(visibleFrame);
-
-                int[] rootLocation = new int[2];
-                root.getLocationOnScreen(rootLocation);
-                int desiredX = anchorX + xoff;
-                int minX = visibleFrame.left + dp(8);
-                int maxX = Math.max(minX, visibleFrame.right - popupWidth - dp(8));
-                int clampedXOnScreen = Math.max(minX, Math.min(desiredX, maxX));
-                int clampedX = clampedXOnScreen - rootLocation[0];
-                int yBelow = anchorY - rootLocation[1] + anchor.getHeight() + yoff;
-                int yAbove = anchorY - rootLocation[1] - yoff;
-
                 popupWindow.setAnimationStyle(android.R.style.Animation_Dialog);
-                popupWindow.showAtLocation(anchor, Gravity.TOP | Gravity.START, clampedX, yBelow);
-
-                View content = popupWindow.getContentView();
-                if (content != null) {
-                    content.measure(
-                            View.MeasureSpec.makeMeasureSpec(popupWidth, View.MeasureSpec.AT_MOST),
-                            View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
-                    );
-                    int popupHeight = content.getMeasuredHeight();
-                    int screenBottom = visibleFrame.bottom - rootLocation[1];
-                    if (yBelow + popupHeight > screenBottom) {
-                        int y = Math.max(visibleFrame.top + dp(8) - rootLocation[1], yAbove - popupHeight);
-                        popupWindow.update(clampedX, y, popupWidth, ViewGroup.LayoutParams.WRAP_CONTENT);
-                    }
-                }
+                popupWindow.showAsDropDown(anchor, xoff, yoff, Gravity.START);
             }
         });
     }
