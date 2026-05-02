@@ -371,8 +371,12 @@ public class ChatInputBox extends AndroidViewComponent {
         }
     }
 
-    @SimpleFunction(description = "Tracks prompt/message history and renders it. If conversationTagOverride is empty, tag is auto-generated from prompt and stored for LastUpsertConversationTag.")
-    public void DisplayAIMessageWithState(String message, String prompt, String listJson, String conversationTagOverride) {
+    @SimpleFunction(description = "Tracks prompt/message history and renders it. Uses message, prompt, and listJson.")
+    public void DisplayAIMessageWithState(String message, String prompt, String listJson) {
+        DisplayAIMessageWithStateCore(message, prompt, listJson, "");
+    }
+
+    private void DisplayAIMessageWithStateCore(String message, String prompt, String listJson, String conversationTagOverride) {
         JSONArray state = parseOrFallbackList(listJson, conversationStateList);
         try {
             String safePrompt = prompt == null ? "" : prompt.trim();
@@ -406,15 +410,14 @@ public class ChatInputBox extends AndroidViewComponent {
         }
     }
 
-
-    @SimpleFunction(description = "Compatibility overload of DisplayAIMessageWithState for callers that still pass an extra argument. The 5th argument is ignored.")
-    public void DisplayAIMessageWithState(String message, String prompt, String listJson, String conversationTagOverride, String ignoredExtraArg) {
-        DisplayAIMessageWithState(message, prompt, listJson, conversationTagOverride);
+    @SimpleFunction(description = "Extended state render that accepts conversationTagOverride as a 4th argument.")
+    public void DisplayAIMessageWithStateTag(String message, String prompt, String listJson, String conversationTagOverride) {
+        DisplayAIMessageWithStateCore(message, prompt, listJson, conversationTagOverride);
     }
 
-    @SimpleFunction(description = "Backward-compatible overload of DisplayAIMessageWithState without conversationTagOverride.")
-    public void DisplayAIMessageWithState(String message, String prompt, String listJson) {
-        DisplayAIMessageWithState(message, prompt, listJson, "");
+    @SimpleFunction(description = "Extended state render for legacy callers with an extra unused 5th argument.")
+    public void DisplayAIMessageWithStateLegacy(String message, String prompt, String listJson, String conversationTagOverride, String ignoredExtraArg) {
+        DisplayAIMessageWithStateCore(message, prompt, listJson, conversationTagOverride);
     }
 
     @SimpleFunction(description = "Populate drawer from TinyDB query/object map or array format. Supports {\"tag\":[\"title\",\"content\"]} and [{\"tag\":[\"title\",\"content\"]}, ...].")
