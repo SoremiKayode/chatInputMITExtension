@@ -624,20 +624,23 @@ public class ChatInputBox extends AndroidViewComponent {
         LinearLayout bubbleWrap = new LinearLayout(container.$context());
         bubbleWrap.setOrientation(LinearLayout.VERTICAL);
         bubbleWrap.setPadding(dp(1), dp(1), dp(1), dp(1));
-        GradientDrawable wrapBg = new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, new int[]{Color.rgb(98, 79, 159), Color.rgb(58, 53, 88)});
+        GradientDrawable wrapBg = new GradientDrawable();
+        wrapBg.setColor(Color.rgb(74, 76, 94));
         wrapBg.setCornerRadius(dp(20));
+        wrapBg.setStroke(dp(1), Color.rgb(125, 129, 156));
         bubbleWrap.setBackground(wrapBg);
 
         TextView bubble = new TextView(container.$context());
         bubble.setText(displayPrompt);
-        bubble.setTextColor(Color.rgb(236, 234, 247));
+        bubble.setTextColor(Color.rgb(238, 241, 248));
         bubble.setTextSize(15);
         bubble.setLineSpacing(dp(3), 1.0f);
         bubble.setPadding(dp(14), dp(10), dp(14), dp(10));
 
         GradientDrawable bubbleBg = new GradientDrawable();
-        bubbleBg.setColor(Color.rgb(42, 39, 61));
+        bubbleBg.setColor(Color.rgb(64, 68, 88));
         bubbleBg.setCornerRadius(dp(19));
+        bubbleBg.setStroke(dp(1), Color.rgb(142, 147, 176));
         bubble.setBackground(bubbleBg);
 
         LinearLayout.LayoutParams bubbleLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -647,7 +650,7 @@ public class ChatInputBox extends AndroidViewComponent {
 
         final TextView copyBtn = new TextView(container.$context());
         copyBtn.setText("Copy");
-        copyBtn.setTextColor(Color.rgb(210, 204, 236));
+        copyBtn.setTextColor(Color.rgb(215, 220, 240));
         copyBtn.setTextSize(12);
         copyBtn.setPadding(dp(12), dp(6), dp(12), dp(8));
         copyBtn.setGravity(Gravity.END);
@@ -668,7 +671,7 @@ public class ChatInputBox extends AndroidViewComponent {
 
         TextView tail = new TextView(container.$context());
         tail.setText("◆");
-        tail.setTextColor(Color.rgb(58, 53, 88));
+        tail.setTextColor(Color.rgb(125, 129, 156));
         tail.setTextSize(10);
         LinearLayout.LayoutParams tailLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         tailLp.gravity = Gravity.END;
@@ -845,11 +848,27 @@ public class ChatInputBox extends AndroidViewComponent {
     private String mergePromptIntoResponse(String previousCombined, String newPrompt, String latestResponse) {
         String response = latestResponse == null ? "" : latestResponse.trim();
         String combined = previousCombined == null ? "" : previousCombined.trim();
-        String promptBlock = newPrompt == null || newPrompt.length() == 0 ? "" : "[PROMPT] " + newPrompt;
+        String promptBlock = newPrompt == null || newPrompt.trim().length() == 0 ? "" : "[PROMPT] " + newPrompt.trim();
+
+        if (combined.length() > 0 && response.startsWith(combined)) {
+            String remainder = response.substring(combined.length()).trim();
+            StringBuilder rebuilt = new StringBuilder();
+            rebuilt.append(combined);
+            if (promptBlock.length() > 0) rebuilt.append("\n\n").append(promptBlock);
+            if (remainder.length() > 0) rebuilt.append("\n\n").append(remainder);
+            return rebuilt.toString().trim();
+        }
 
         if (combined.length() > 0 && response.contains(combined)) {
-            String updated = response.replace(combined, combined + (promptBlock.length() > 0 ? "\n\n" + promptBlock : ""));
-            return updated.trim();
+            int idx = response.indexOf(combined);
+            String before = response.substring(0, idx).trim();
+            String after = response.substring(idx + combined.length()).trim();
+            StringBuilder rebuilt = new StringBuilder();
+            if (before.length() > 0) rebuilt.append(before).append("\n\n");
+            rebuilt.append(combined);
+            if (promptBlock.length() > 0) rebuilt.append("\n\n").append(promptBlock);
+            if (after.length() > 0) rebuilt.append("\n\n").append(after);
+            return rebuilt.toString().trim();
         }
 
         if (promptBlock.length() > 0 && response.length() > 0) return (promptBlock + "\n\n" + response).trim();
@@ -1001,13 +1020,17 @@ public class ChatInputBox extends AndroidViewComponent {
             entries = new JSONObject();
         }
 
-        JSONArray list = parseOrFallbackList(listJson, conversationStateList);
-        JSONObject item = list.length() > 0 ? list.optJSONObject(list.length() - 1) : null;
-        if (item == null) item = conversationStateList.length() > 0 ? conversationStateList.optJSONObject(conversationStateList.length() - 1) : null;
+        JSONObject item = parseCurrentConversationItem(listJson);
+        if (item == null && conversationStateList.length() > 0) {
+            item = conversationStateList.optJSONObject(conversationStateList.length() - 1);
+        }
 
-        String tag = "";
-        if (item != null) tag = item.optString("tag", "").trim();
-        if (tag.length() == 0) tag = generateConversationTagFromList(list);
+        String tag = item == null ? "" : item.optString("tag", "").trim();
+        if (tag.length() == 0) {
+            JSONArray fallbackList = new JSONArray();
+            if (item != null) fallbackList.put(item);
+            tag = generateConversationTagFromList(fallbackList);
+        }
 
         try {
             JSONArray single = new JSONArray();
@@ -1016,6 +1039,20 @@ public class ChatInputBox extends AndroidViewComponent {
             lastUpsertedConversationTag = tag;
         } catch (Exception ignored) {}
         return entries.toString();
+    }
+
+
+    private JSONObject parseCurrentConversationItem(String source) {
+        String safe = source == null ? "" : source.trim();
+        if (safe.length() == 0) return null;
+        try {
+            if (safe.startsWith("{")) return new JSONObject(safe);
+            if (safe.startsWith("[")) {
+                JSONArray arr = new JSONArray(safe);
+                return arr.length() > 0 ? arr.optJSONObject(arr.length() - 1) : null;
+            }
+        } catch (Exception ignored) {}
+        return null;
     }
 
     @SimpleFunction(description = "Returns the tag used by the most recent UpsertConversationListForTinyDB call.")
