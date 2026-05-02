@@ -406,6 +406,12 @@ public class ChatInputBox extends AndroidViewComponent {
         }
     }
 
+
+    @SimpleFunction(description = "Compatibility overload of DisplayAIMessageWithState for callers that still pass an extra argument. The 5th argument is ignored.")
+    public void DisplayAIMessageWithState(String message, String prompt, String listJson, String conversationTagOverride, String ignoredExtraArg) {
+        DisplayAIMessageWithState(message, prompt, listJson, conversationTagOverride);
+    }
+
     @SimpleFunction(description = "Backward-compatible overload of DisplayAIMessageWithState without conversationTagOverride.")
     public void DisplayAIMessageWithState(String message, String prompt, String listJson) {
         DisplayAIMessageWithState(message, prompt, listJson, "");
