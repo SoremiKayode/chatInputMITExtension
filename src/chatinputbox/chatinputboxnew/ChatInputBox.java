@@ -371,12 +371,13 @@ public class ChatInputBox extends AndroidViewComponent {
         }
     }
 
-    @SimpleFunction(description = "Tracks prompt/message history and renders it. This block updates CurrentConversationListItem and does not return a value.")
-    public void DisplayAIMessageWithState(String message, String prompt, String listJson, String tag) {
+    @SimpleFunction(description = "Tracks prompt/message history and renders it. Tag is auto-generated from prompt and stored for LastUpsertConversationTag.")
+    public void DisplayAIMessageWithState(String message, String prompt, String listJson) {
         JSONArray state = parseOrFallbackList(listJson, conversationStateList);
         try {
             String safePrompt = prompt == null ? "" : prompt.trim();
             String safeMessage = message == null ? "" : message;
+            String generatedTag = generateConversationTagFromPrompt(safePrompt);
             String priorCombined = "";
             int len = state.length();
             if (len > 0) {
@@ -388,8 +389,9 @@ public class ChatInputBox extends AndroidViewComponent {
             JSONObject item = new JSONObject();
             item.put("prompt", safePrompt);
             item.put("message", mergedMessage);
-            item.put("tag", tag == null ? "" : tag);
+            item.put("tag", generatedTag);
             item.put("datetime", nowIso());
+            lastUpsertedConversationTag = generatedTag;
 
             ResetConversationStateList();
             conversationStateList.put(item);
@@ -593,23 +595,32 @@ public class ChatInputBox extends AndroidViewComponent {
 
 
     private View makeUserPromptBubble(String promptText) {
+        final String fullPrompt = promptText == null ? "" : promptText.trim();
+        final String displayPrompt = truncatePromptPreview(fullPrompt, 24);
         LinearLayout row = new LinearLayout(container.$context());
         row.setOrientation(LinearLayout.VERTICAL);
         LinearLayout.LayoutParams rowLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        rowLp.setMargins(0, dp(4), 0, dp(4));
+        rowLp.setMargins(0, dp(6), 0, dp(8));
         row.setLayoutParams(rowLp);
+        row.setGravity(Gravity.END);
+
+        LinearLayout bubbleWrap = new LinearLayout(container.$context());
+        bubbleWrap.setOrientation(LinearLayout.VERTICAL);
+        bubbleWrap.setPadding(dp(1), dp(1), dp(1), dp(1));
+        GradientDrawable wrapBg = new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, new int[]{Color.rgb(98, 79, 159), Color.rgb(58, 53, 88)});
+        wrapBg.setCornerRadius(dp(20));
+        bubbleWrap.setBackground(wrapBg);
 
         TextView bubble = new TextView(container.$context());
-        bubble.setText(promptText == null ? "" : promptText.trim());
-        bubble.setTextColor(Color.rgb(24, 45, 79));
+        bubble.setText(displayPrompt);
+        bubble.setTextColor(Color.rgb(236, 234, 247));
         bubble.setTextSize(15);
-        bubble.setLineSpacing(dp(2), 1.0f);
-        bubble.setPadding(dp(12), dp(9), dp(12), dp(9));
+        bubble.setLineSpacing(dp(3), 1.0f);
+        bubble.setPadding(dp(14), dp(10), dp(14), dp(10));
 
         GradientDrawable bubbleBg = new GradientDrawable();
-        bubbleBg.setColor(Color.rgb(205, 226, 255));
-        bubbleBg.setStroke(dp(1), Color.rgb(116, 164, 235));
-        bubbleBg.setCornerRadius(dp(16));
+        bubbleBg.setColor(Color.rgb(42, 39, 61));
+        bubbleBg.setCornerRadius(dp(19));
         bubble.setBackground(bubbleBg);
 
         LinearLayout.LayoutParams bubbleLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -617,16 +628,39 @@ public class ChatInputBox extends AndroidViewComponent {
         bubbleLp.setMargins(dp(42), 0, 0, 0);
         bubble.setLayoutParams(bubbleLp);
 
+        final TextView copyBtn = new TextView(container.$context());
+        copyBtn.setText("Copy");
+        copyBtn.setTextColor(Color.rgb(210, 204, 236));
+        copyBtn.setTextSize(12);
+        copyBtn.setPadding(dp(12), dp(6), dp(12), dp(8));
+        copyBtn.setGravity(Gravity.END);
+        copyBtn.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                ClipboardManager clipboard = (ClipboardManager) container.$context().getSystemService(Context.CLIPBOARD_SERVICE);
+                clipboard.setPrimaryClip(ClipData.newPlainText("prompt", fullPrompt));
+                copyBtn.setText("Copied");
+                handler.postDelayed(new Runnable() {
+                    @Override
+                    public void run() {
+                        copyBtn.setText("Copy");
+                    }
+                }, 1000);
+            }
+        });
+
         TextView tail = new TextView(container.$context());
-        tail.setText("◢");
-        tail.setTextColor(Color.rgb(116, 164, 235));
-        tail.setTextSize(14);
+        tail.setText("◆");
+        tail.setTextColor(Color.rgb(58, 53, 88));
+        tail.setTextSize(10);
         LinearLayout.LayoutParams tailLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         tailLp.gravity = Gravity.END;
-        tailLp.setMargins(0, -dp(4), dp(8), 0);
+        tailLp.setMargins(0, -dp(4), dp(10), 0);
         tail.setLayoutParams(tailLp);
 
-        row.addView(bubble);
+        bubbleWrap.addView(bubble);
+        bubbleWrap.addView(copyBtn);
+        row.addView(bubbleWrap);
         row.addView(tail);
         return row;
     }
@@ -987,6 +1021,29 @@ public class ChatInputBox extends AndroidViewComponent {
         if (candidate.length() > 64) candidate = candidate.substring(0, 64);
         if (candidate.length() == 0) candidate = "chat_" + System.currentTimeMillis();
         return candidate;
+    }
+
+    private String generateConversationTagFromPrompt(String prompt) {
+        String candidate = prompt == null ? "" : prompt.trim();
+        if (candidate.length() == 0) candidate = "chat_" + System.currentTimeMillis();
+        candidate = candidate.replaceAll("\\s+", "_").replaceAll("[^A-Za-z0-9_\\-]", "");
+        if (candidate.length() > 64) candidate = candidate.substring(0, 64);
+        if (candidate.length() == 0) candidate = "chat_" + System.currentTimeMillis();
+        return candidate;
+    }
+
+    private String truncatePromptPreview(String prompt, int maxWords) {
+        String safe = prompt == null ? "" : prompt.trim();
+        if (safe.length() == 0) return safe;
+        String[] words = safe.split("\\s+");
+        if (words.length <= maxWords) return safe;
+        StringBuilder out = new StringBuilder();
+        for (int i = 0; i < maxWords; i++) {
+            if (i > 0) out.append(" ");
+            out.append(words[i]);
+        }
+        out.append(" …");
+        return out.toString();
     }
 
     private JSONArray parseOrFallbackList(String json, JSONArray fallback) {
