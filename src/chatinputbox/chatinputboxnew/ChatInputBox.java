@@ -371,13 +371,16 @@ public class ChatInputBox extends AndroidViewComponent {
         }
     }
 
-    @SimpleFunction(description = "Tracks prompt/message history and renders it. Tag is auto-generated from prompt and stored for LastUpsertConversationTag.")
-    public void DisplayAIMessageWithState(String message, String prompt, String listJson) {
+    @SimpleFunction(description = "Tracks prompt/message history and renders it. If conversationTagOverride is empty, tag is auto-generated from prompt and stored for LastUpsertConversationTag.")
+    public void DisplayAIMessageWithState(String message, String prompt, String listJson, String conversationTagOverride) {
         JSONArray state = parseOrFallbackList(listJson, conversationStateList);
         try {
             String safePrompt = prompt == null ? "" : prompt.trim();
             String safeMessage = message == null ? "" : message;
-            String generatedTag = generateConversationTagFromPrompt(safePrompt);
+            String providedTag = conversationTagOverride == null ? "" : conversationTagOverride.trim();
+            String generatedTag = providedTag.length() > 0
+                    ? providedTag
+                    : generateConversationTagFromPrompt(safePrompt);
             String priorCombined = "";
             int len = state.length();
             if (len > 0) {
@@ -401,6 +404,11 @@ public class ChatInputBox extends AndroidViewComponent {
         } catch (Exception e) {
             DisplayAIMessage(message == null ? "" : message);
         }
+    }
+
+    @SimpleFunction(description = "Backward-compatible overload of DisplayAIMessageWithState without conversationTagOverride.")
+    public void DisplayAIMessageWithState(String message, String prompt, String listJson) {
+        DisplayAIMessageWithState(message, prompt, listJson, "");
     }
 
     @SimpleFunction(description = "Populate drawer from TinyDB query/object map or array format. Supports {\"tag\":[\"title\",\"content\"]} and [{\"tag\":[\"title\",\"content\"]}, ...].")
