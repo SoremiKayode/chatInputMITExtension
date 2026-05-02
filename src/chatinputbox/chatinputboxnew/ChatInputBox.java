@@ -124,6 +124,7 @@ public class ChatInputBox extends AndroidViewComponent {
     private PopupWindow audioReadAloudListPopup;
     private String lastSelectedAudioReadAloudItem = "";
     private final JSONArray conversationStateList = new JSONArray();
+    private String lastUpsertedConversationTag = "";
 
     public ChatInputBox(ComponentContainer container) {
         super(container);
@@ -370,19 +371,25 @@ public class ChatInputBox extends AndroidViewComponent {
         }
     }
 
-    @SimpleFunction(description = "Tracks prompt/message history, updates the provided list JSON, rebuilds contextual message, and displays it.")
+    @SimpleFunction(description = "Tracks prompt/message history, updates the provided list JSON, then renders a user bubble followed by the assistant response.")
     public String DisplayAIMessageWithState(String message, String prompt, String listJson, String tag) {
         JSONArray state = parseOrFallbackList(listJson, conversationStateList);
         JSONObject item = new JSONObject();
         try {
-            item.put("prompt", prompt == null ? "" : prompt);
-            item.put("message", message == null ? "" : message);
+            String safePrompt = prompt == null ? "" : prompt;
+            String safeMessage = message == null ? "" : message;
+            item.put("prompt", safePrompt);
+            item.put("message", safeMessage);
             item.put("tag", tag == null ? "" : tag);
             item.put("datetime", nowIso());
             state.put(item);
             syncState(state);
-            String rebuilt = rebuildMessageFromState(message, state);
-            DisplayAIMessage(rebuilt);
+
+            if (safePrompt.trim().length() > 0) {
+                messagesBox.addView(makeUserPromptBubble(safePrompt));
+                scrollToBottom();
+            }
+            DisplayAIMessage(safeMessage);
             return state.toString();
         } catch (Exception e) {
             DisplayAIMessage(message == null ? "" : message);
@@ -390,16 +397,31 @@ public class ChatInputBox extends AndroidViewComponent {
         }
     }
 
-    @SimpleFunction(description = "Populate drawer from JSON array of dictionaries: [{\"id\":[\"title\",\"content\"]}, ...]. Drawer shows title.")
+    @SimpleFunction(description = "Populate drawer from TinyDB query/object map or array format. Supports {\"tag\":[\"title\",\"content\"]} and [{\"tag\":[\"title\",\"content\"]}, ...].")
     public void SetConversationsFromDictionaryList(String jsonList) {
         conversationList.removeAllViews();
         drawerConversationMap.clear();
         try {
-            JSONArray list = new JSONArray(jsonList);
             ArrayList<JSONObject> rows = new ArrayList<JSONObject>();
-            for (int i = 0; i < list.length(); i++) {
-                JSONObject item = list.optJSONObject(i);
-                if (item != null && item.length() > 0) rows.add(item);
+            String source = jsonList == null ? "" : jsonList.trim();
+            if (source.startsWith("{")) {
+                JSONObject map = new JSONObject(source);
+                JSONArray names = map.names();
+                if (names != null) {
+                    for (int i = 0; i < names.length(); i++) {
+                        String key = names.optString(i, "").trim();
+                        if (key.length() == 0) continue;
+                        JSONObject item = new JSONObject();
+                        item.put(key, map.opt(key));
+                        rows.add(item);
+                    }
+                }
+            } else {
+                JSONArray list = new JSONArray(source);
+                for (int i = 0; i < list.length(); i++) {
+                    JSONObject item = list.optJSONObject(i);
+                    if (item != null && item.length() > 0) rows.add(item);
+                }
             }
             Collections.sort(rows, new Comparator<JSONObject>() {
                 @Override
@@ -563,6 +585,45 @@ public class ChatInputBox extends AndroidViewComponent {
         lp.setMargins(0, dp(5), 0, dp(5));
         tv.setLayoutParams(lp);
         return tv;
+    }
+
+
+    private View makeUserPromptBubble(String promptText) {
+        LinearLayout row = new LinearLayout(container.$context());
+        row.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams rowLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        rowLp.setMargins(0, dp(4), 0, dp(4));
+        row.setLayoutParams(rowLp);
+
+        TextView bubble = new TextView(container.$context());
+        bubble.setText(promptText == null ? "" : promptText.trim());
+        bubble.setTextColor(Color.WHITE);
+        bubble.setTextSize(15);
+        bubble.setLineSpacing(dp(2), 1.0f);
+        bubble.setPadding(dp(12), dp(9), dp(12), dp(9));
+
+        GradientDrawable bubbleBg = new GradientDrawable();
+        bubbleBg.setColor(Color.rgb(61, 131, 255));
+        bubbleBg.setCornerRadius(dp(16));
+        bubble.setBackground(bubbleBg);
+
+        LinearLayout.LayoutParams bubbleLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        bubbleLp.gravity = Gravity.END;
+        bubbleLp.setMargins(dp(42), 0, 0, 0);
+        bubble.setLayoutParams(bubbleLp);
+
+        TextView tail = new TextView(container.$context());
+        tail.setText("◢");
+        tail.setTextColor(Color.rgb(61, 131, 255));
+        tail.setTextSize(14);
+        LinearLayout.LayoutParams tailLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        tailLp.gravity = Gravity.END;
+        tailLp.setMargins(0, -dp(4), dp(8), 0);
+        tail.setLayoutParams(tailLp);
+
+        row.addView(bubble);
+        row.addView(tail);
+        return row;
     }
 
     private TextView makeConversationRow(String text) {
@@ -827,27 +888,44 @@ public class ChatInputBox extends AndroidViewComponent {
         }
     }
 
-    @SimpleFunction(description = "Upserts a tagged conversation list item in TinyDB-style JSON array [{\"tag\":\"...\",\"list\":[...],\"datetime\":\"...\"}].")
-    public String UpsertConversationListForTinyDB(String tinyDbEntriesJson, String listJson, String tag) {
-        JSONArray entries = parseOrFallbackList(tinyDbEntriesJson, new JSONArray());
-        String safeTag = tag == null ? "" : tag.trim();
-        JSONObject payload = new JSONObject();
+    @SimpleFunction(description = "Upserts a conversation list into a TinyDB-style dictionary JSON using an auto-generated or prompt-derived tag.")
+    public String UpsertConversationListForTinyDB(String tinyDbEntriesJson, String listJson) {
+        JSONObject entries;
         try {
-            payload.put("tag", safeTag);
-            payload.put("list", parseOrFallbackList(listJson, conversationStateList));
-            payload.put("datetime", nowIso());
-            boolean updated = false;
-            for (int i = 0; i < entries.length(); i++) {
-                JSONObject row = entries.optJSONObject(i);
-                if (row != null && safeTag.equals(row.optString("tag", ""))) {
-                    entries.put(i, payload);
-                    updated = true;
-                    break;
-                }
-            }
-            if (!updated) entries.put(payload);
+            String base = tinyDbEntriesJson == null ? "" : tinyDbEntriesJson.trim();
+            entries = base.startsWith("{") ? new JSONObject(base) : new JSONObject();
+        } catch (Exception e) {
+            entries = new JSONObject();
+        }
+        JSONArray list = parseOrFallbackList(listJson, conversationStateList);
+        String tag = generateConversationTagFromList(list);
+        try {
+            entries.put(tag, list);
+            lastUpsertedConversationTag = tag;
         } catch (Exception ignored) {}
         return entries.toString();
+    }
+
+    @SimpleFunction(description = "Returns the tag used by the most recent UpsertConversationListForTinyDB call.")
+    public String LastUpsertConversationTag() {
+        return lastUpsertedConversationTag == null ? "" : lastUpsertedConversationTag;
+    }
+
+    private String generateConversationTagFromList(JSONArray list) {
+        String candidate = "";
+        int len = list == null ? 0 : list.length();
+        if (len > 0) {
+            JSONObject last = list.optJSONObject(len - 1);
+            if (last != null) {
+                candidate = last.optString("prompt", "").trim();
+                if (candidate.length() == 0) candidate = last.optString("tag", "").trim();
+            }
+        }
+        if (candidate.length() == 0) candidate = "chat_" + System.currentTimeMillis();
+        candidate = candidate.replaceAll("\\s+", "_").replaceAll("[^A-Za-z0-9_\\-]", "");
+        if (candidate.length() > 64) candidate = candidate.substring(0, 64);
+        if (candidate.length() == 0) candidate = "chat_" + System.currentTimeMillis();
+        return candidate;
     }
 
     private JSONArray parseOrFallbackList(String json, JSONArray fallback) {
@@ -862,21 +940,6 @@ public class ChatInputBox extends AndroidViewComponent {
     private void syncState(JSONArray state) {
         ResetConversationStateList();
         for (int i = 0; i < state.length(); i++) conversationStateList.put(state.opt(i));
-    }
-
-    private String rebuildMessageFromState(String latestMessage, JSONArray state) {
-        String rebuilt = latestMessage == null ? "" : latestMessage;
-        for (int i = 0; i < state.length(); i++) {
-            JSONObject row = state.optJSONObject(i);
-            if (row == null) continue;
-            String p = row.optString("prompt", "").trim();
-            String m = row.optString("message", "").trim();
-            if (p.length() == 0 || m.length() == 0) continue;
-            String block = "User: " + p + "\nAssistant: " + m;
-            if (!rebuilt.contains(m)) rebuilt += (rebuilt.length() == 0 ? "" : "\n\n") + block;
-            else rebuilt = rebuilt.replace(m, block + "\nAssistant: " + m);
-        }
-        return rebuilt.trim();
     }
 
     private String extractConversationDate(JSONObject item) {
