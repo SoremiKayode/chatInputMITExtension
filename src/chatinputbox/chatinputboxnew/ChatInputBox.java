@@ -44,6 +44,8 @@ import java.io.InputStream;
 import java.net.URL;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.Locale;
+import java.util.TreeMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.json.JSONArray;
@@ -830,6 +832,31 @@ public class ChatInputBox extends AndroidViewComponent {
     @SimpleFunction(description = "Returns the last selected item from the Audio/Read Aloud popup list.")
     public String SelectedAudioReadAloudItem() {
         return lastSelectedAudioReadAloudItem;
+    }
+
+
+    @SimpleFunction(description = "Returns a dictionary JSON of language short codes mapped to language names for MIT App Inventor TextToSpeech and SpeechRecognizer. Uses ISO language codes from the Android runtime locale set.")
+    public String SupportedSpeechLanguageCodes() {
+        try {
+            TreeMap<String, String> map = new TreeMap<String, String>();
+            String[] isoLanguages = Locale.getISOLanguages();
+            for (String code : isoLanguages) {
+                if (code == null) continue;
+                String normalizedCode = code.trim().toLowerCase(Locale.US);
+                if (normalizedCode.length() != 2) continue;
+                Locale locale = new Locale(normalizedCode);
+                String name = locale.getDisplayLanguage(Locale.ENGLISH);
+                if (name == null || name.trim().length() == 0) continue;
+                map.put(normalizedCode, name);
+            }
+            JSONObject object = new JSONObject();
+            for (String key : map.keySet()) {
+                object.put(key, map.get(key));
+            }
+            return object.toString();
+        } catch (Exception e) {
+            return "{}";
+        }
     }
 
     @SimpleFunction(description = "Returns AI textbox text cleaned for TextToSpeech: removes code fences, markdown headings, bullets and symbols.")
