@@ -371,29 +371,33 @@ public class ChatInputBox extends AndroidViewComponent {
         }
     }
 
-    @SimpleFunction(description = "Tracks prompt/message history, updates the provided list JSON, then renders a user bubble followed by the assistant response.")
-    public String DisplayAIMessageWithState(String message, String prompt, String listJson, String tag) {
+    @SimpleFunction(description = "Tracks prompt/message history and renders it. This block updates CurrentConversationListItem and does not return a value.")
+    public void DisplayAIMessageWithState(String message, String prompt, String listJson, String tag) {
         JSONArray state = parseOrFallbackList(listJson, conversationStateList);
-        JSONObject item = new JSONObject();
         try {
-            String safePrompt = prompt == null ? "" : prompt;
+            String safePrompt = prompt == null ? "" : prompt.trim();
             String safeMessage = message == null ? "" : message;
+            String priorCombined = "";
+            int len = state.length();
+            if (len > 0) {
+                JSONObject last = state.optJSONObject(len - 1);
+                if (last != null) priorCombined = last.optString("message", "");
+            }
+            String mergedMessage = mergePromptIntoResponse(priorCombined, safePrompt, safeMessage);
+
+            JSONObject item = new JSONObject();
             item.put("prompt", safePrompt);
-            item.put("message", safeMessage);
+            item.put("message", mergedMessage);
             item.put("tag", tag == null ? "" : tag);
             item.put("datetime", nowIso());
-            state.put(item);
-            syncState(state);
 
-            if (safePrompt.trim().length() > 0) {
-                messagesBox.addView(makeUserPromptBubble(safePrompt));
-                scrollToBottom();
-            }
-            DisplayAIMessage(safeMessage);
-            return state.toString();
+            ResetConversationStateList();
+            conversationStateList.put(item);
+            syncState(conversationStateList);
+
+            redrawConversationFromCombinedMessage(mergedMessage);
         } catch (Exception e) {
             DisplayAIMessage(message == null ? "" : message);
-            return state.toString();
         }
     }
 
@@ -597,13 +601,14 @@ public class ChatInputBox extends AndroidViewComponent {
 
         TextView bubble = new TextView(container.$context());
         bubble.setText(promptText == null ? "" : promptText.trim());
-        bubble.setTextColor(Color.WHITE);
+        bubble.setTextColor(Color.rgb(24, 45, 79));
         bubble.setTextSize(15);
         bubble.setLineSpacing(dp(2), 1.0f);
         bubble.setPadding(dp(12), dp(9), dp(12), dp(9));
 
         GradientDrawable bubbleBg = new GradientDrawable();
-        bubbleBg.setColor(Color.rgb(61, 131, 255));
+        bubbleBg.setColor(Color.rgb(205, 226, 255));
+        bubbleBg.setStroke(dp(1), Color.rgb(116, 164, 235));
         bubbleBg.setCornerRadius(dp(16));
         bubble.setBackground(bubbleBg);
 
@@ -614,7 +619,7 @@ public class ChatInputBox extends AndroidViewComponent {
 
         TextView tail = new TextView(container.$context());
         tail.setText("◢");
-        tail.setTextColor(Color.rgb(61, 131, 255));
+        tail.setTextColor(Color.rgb(116, 164, 235));
         tail.setTextSize(14);
         LinearLayout.LayoutParams tailLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         tailLp.gravity = Gravity.END;
@@ -785,6 +790,48 @@ public class ChatInputBox extends AndroidViewComponent {
 
 
 
+
+    private String mergePromptIntoResponse(String previousCombined, String newPrompt, String latestResponse) {
+        String response = latestResponse == null ? "" : latestResponse.trim();
+        String combined = previousCombined == null ? "" : previousCombined.trim();
+        String promptBlock = newPrompt == null || newPrompt.length() == 0 ? "" : "[PROMPT] " + newPrompt;
+
+        if (combined.length() > 0 && response.contains(combined)) {
+            String updated = response.replace(combined, combined + (promptBlock.length() > 0 ? "\n\n" + promptBlock : ""));
+            return updated.trim();
+        }
+
+        if (promptBlock.length() > 0 && response.length() > 0) return (promptBlock + "\n\n" + response).trim();
+        if (promptBlock.length() > 0) return promptBlock;
+        return response;
+    }
+
+    private void redrawConversationFromCombinedMessage(String combinedMessage) {
+        ClearMessages();
+        if (combinedMessage == null || combinedMessage.trim().length() == 0) return;
+
+        String[] blocks = combinedMessage.split("\n\n");
+        StringBuilder aiText = new StringBuilder();
+        for (int i = 0; i < blocks.length; i++) {
+            String block = blocks[i].trim();
+            if (block.startsWith("[PROMPT]")) {
+                if (aiText.length() > 0) {
+                    DisplayAIMessage(aiText.toString().trim());
+                    aiText.setLength(0);
+                }
+                String promptText = block.substring("[PROMPT]".length()).trim();
+                if (promptText.length() > 0) {
+                    messagesBox.addView(makeUserPromptBubble(promptText));
+                    scrollToBottom();
+                }
+            } else {
+                if (aiText.length() > 0) aiText.append("\n\n");
+                aiText.append(block);
+            }
+        }
+        if (aiText.length() > 0) DisplayAIMessage(aiText.toString().trim());
+    }
+
     private void showDrawerItemAction(final TextView row, final String id, final String title, final String content) {
         final TextView action = new TextView(container.$context());
         action.setText(drawerItemSelectIcon + " Select");
@@ -873,12 +920,17 @@ public class ChatInputBox extends AndroidViewComponent {
         }
     }
 
-    @SimpleFunction(description = "Returns the latest tracked conversation state item JSON.")
-    public String CurrentConversationStateItem() {
+    @SimpleFunction(description = "Returns CurrentConversationListItem JSON (single dictionary item with combined message history).")
+    public String CurrentConversationListItem() {
         int len = conversationStateList.length();
         if (len == 0) return "{}";
         JSONObject obj = conversationStateList.optJSONObject(len - 1);
         return obj == null ? "{}" : obj.toString();
+    }
+
+    @SimpleFunction(description = "Backward compatible alias for CurrentConversationListItem.")
+    public String CurrentConversationStateItem() {
+        return CurrentConversationListItem();
     }
 
     @SimpleFunction(description = "Resets tracked conversation state list.")
@@ -888,7 +940,7 @@ public class ChatInputBox extends AndroidViewComponent {
         }
     }
 
-    @SimpleFunction(description = "Upserts a conversation list into a TinyDB-style dictionary JSON using an auto-generated or prompt-derived tag.")
+    @SimpleFunction(description = "Upserts CurrentConversationListItem into TinyDB entries JSON using its tag if available.")
     public String UpsertConversationListForTinyDB(String tinyDbEntriesJson, String listJson) {
         JSONObject entries;
         try {
@@ -897,10 +949,19 @@ public class ChatInputBox extends AndroidViewComponent {
         } catch (Exception e) {
             entries = new JSONObject();
         }
+
         JSONArray list = parseOrFallbackList(listJson, conversationStateList);
-        String tag = generateConversationTagFromList(list);
+        JSONObject item = list.length() > 0 ? list.optJSONObject(list.length() - 1) : null;
+        if (item == null) item = conversationStateList.length() > 0 ? conversationStateList.optJSONObject(conversationStateList.length() - 1) : null;
+
+        String tag = "";
+        if (item != null) tag = item.optString("tag", "").trim();
+        if (tag.length() == 0) tag = generateConversationTagFromList(list);
+
         try {
-            entries.put(tag, list);
+            JSONArray single = new JSONArray();
+            if (item != null) single.put(item);
+            entries.put(tag, single);
             lastUpsertedConversationTag = tag;
         } catch (Exception ignored) {}
         return entries.toString();
