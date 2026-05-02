@@ -42,8 +42,12 @@ import com.google.appinventor.components.runtime.util.MediaUtil;
 import java.io.InputStream;
 import java.net.URL;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.Locale;
+import java.text.SimpleDateFormat;
 import java.util.TreeMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -119,6 +123,7 @@ public class ChatInputBox extends AndroidViewComponent {
     private String drawerItemDeleteIcon = "🗑";
     private PopupWindow audioReadAloudListPopup;
     private String lastSelectedAudioReadAloudItem = "";
+    private final JSONArray conversationStateList = new JSONArray();
 
     public ChatInputBox(ComponentContainer container) {
         super(container);
@@ -365,15 +370,45 @@ public class ChatInputBox extends AndroidViewComponent {
         }
     }
 
+    @SimpleFunction(description = "Tracks prompt/message history, updates the provided list JSON, rebuilds contextual message, and displays it.")
+    public String DisplayAIMessageWithState(String message, String prompt, String listJson, String tag) {
+        JSONArray state = parseOrFallbackList(listJson, conversationStateList);
+        JSONObject item = new JSONObject();
+        try {
+            item.put("prompt", prompt == null ? "" : prompt);
+            item.put("message", message == null ? "" : message);
+            item.put("tag", tag == null ? "" : tag);
+            item.put("datetime", nowIso());
+            state.put(item);
+            syncState(state);
+            String rebuilt = rebuildMessageFromState(message, state);
+            DisplayAIMessage(rebuilt);
+            return state.toString();
+        } catch (Exception e) {
+            DisplayAIMessage(message == null ? "" : message);
+            return state.toString();
+        }
+    }
+
     @SimpleFunction(description = "Populate drawer from JSON array of dictionaries: [{\"id\":[\"title\",\"content\"]}, ...]. Drawer shows title.")
     public void SetConversationsFromDictionaryList(String jsonList) {
         conversationList.removeAllViews();
         drawerConversationMap.clear();
         try {
             JSONArray list = new JSONArray(jsonList);
-            for (int i = list.length() - 1; i >= 0; i--) {
+            ArrayList<JSONObject> rows = new ArrayList<JSONObject>();
+            for (int i = 0; i < list.length(); i++) {
                 JSONObject item = list.optJSONObject(i);
-                if (item == null || item.length() == 0) continue;
+                if (item != null && item.length() > 0) rows.add(item);
+            }
+            Collections.sort(rows, new Comparator<JSONObject>() {
+                @Override
+                public int compare(JSONObject a, JSONObject b) {
+                    return extractConversationDate(b).compareTo(extractConversationDate(a));
+                }
+            });
+            for (int i = 0; i < rows.size(); i++) {
+                JSONObject item = rows.get(i);
                 JSONArray names = item.names();
                 if (names == null || names.length() == 0) continue;
                 final String conversationId = names.optString(0, "").trim();
@@ -775,6 +810,90 @@ public class ChatInputBox extends AndroidViewComponent {
         } catch (Exception e) {
             return "{}";
         }
+    }
+
+    @SimpleFunction(description = "Returns the latest tracked conversation state item JSON.")
+    public String CurrentConversationStateItem() {
+        int len = conversationStateList.length();
+        if (len == 0) return "{}";
+        JSONObject obj = conversationStateList.optJSONObject(len - 1);
+        return obj == null ? "{}" : obj.toString();
+    }
+
+    @SimpleFunction(description = "Resets tracked conversation state list.")
+    public void ResetConversationStateList() {
+        while (conversationStateList.length() > 0) {
+            conversationStateList.remove(conversationStateList.length() - 1);
+        }
+    }
+
+    @SimpleFunction(description = "Upserts a tagged conversation list item in TinyDB-style JSON array [{\"tag\":\"...\",\"list\":[...],\"datetime\":\"...\"}].")
+    public String UpsertConversationListForTinyDB(String tinyDbEntriesJson, String listJson, String tag) {
+        JSONArray entries = parseOrFallbackList(tinyDbEntriesJson, new JSONArray());
+        String safeTag = tag == null ? "" : tag.trim();
+        JSONObject payload = new JSONObject();
+        try {
+            payload.put("tag", safeTag);
+            payload.put("list", parseOrFallbackList(listJson, conversationStateList));
+            payload.put("datetime", nowIso());
+            boolean updated = false;
+            for (int i = 0; i < entries.length(); i++) {
+                JSONObject row = entries.optJSONObject(i);
+                if (row != null && safeTag.equals(row.optString("tag", ""))) {
+                    entries.put(i, payload);
+                    updated = true;
+                    break;
+                }
+            }
+            if (!updated) entries.put(payload);
+        } catch (Exception ignored) {}
+        return entries.toString();
+    }
+
+    private JSONArray parseOrFallbackList(String json, JSONArray fallback) {
+        try {
+            if (json != null && json.trim().startsWith("[")) return new JSONArray(json);
+        } catch (Exception ignored) {}
+        JSONArray copy = new JSONArray();
+        for (int i = 0; i < fallback.length(); i++) copy.put(fallback.opt(i));
+        return copy;
+    }
+
+    private void syncState(JSONArray state) {
+        ResetConversationStateList();
+        for (int i = 0; i < state.length(); i++) conversationStateList.put(state.opt(i));
+    }
+
+    private String rebuildMessageFromState(String latestMessage, JSONArray state) {
+        String rebuilt = latestMessage == null ? "" : latestMessage;
+        for (int i = 0; i < state.length(); i++) {
+            JSONObject row = state.optJSONObject(i);
+            if (row == null) continue;
+            String p = row.optString("prompt", "").trim();
+            String m = row.optString("message", "").trim();
+            if (p.length() == 0 || m.length() == 0) continue;
+            String block = "User: " + p + "\nAssistant: " + m;
+            if (!rebuilt.contains(m)) rebuilt += (rebuilt.length() == 0 ? "" : "\n\n") + block;
+            else rebuilt = rebuilt.replace(m, block + "\nAssistant: " + m);
+        }
+        return rebuilt.trim();
+    }
+
+    private String extractConversationDate(JSONObject item) {
+        try {
+            JSONArray names = item.names();
+            if (names == null || names.length() == 0) return "";
+            String id = names.optString(0, "");
+            JSONArray parts = item.optJSONArray(id);
+            if (parts != null && parts.length() > 2) return parts.optString(2, "");
+            JSONObject root = item.optJSONObject(id);
+            if (root != null) return root.optString("datetime", "");
+        } catch (Exception ignored) {}
+        return "";
+    }
+
+    private String nowIso() {
+        return new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US).format(new Date());
     }
 
     @SimpleFunction(description = "Sets popup list items from dictionary JSON, list JSON, comma-separated string, or newline-separated string.")
