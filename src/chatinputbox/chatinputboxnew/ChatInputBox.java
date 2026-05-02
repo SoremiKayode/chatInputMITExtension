@@ -31,9 +31,6 @@ import android.widget.ScrollView;
 import android.widget.Toast;
 import android.widget.TextView;
 import android.widget.PopupWindow;
-import android.widget.ListView;
-import android.widget.ArrayAdapter;
-import android.widget.AdapterView;
 
 import com.google.appinventor.components.annotations.SimpleEvent;
 import com.google.appinventor.components.annotations.SimpleFunction;
@@ -863,36 +860,41 @@ public class ChatInputBox extends AndroidViewComponent {
             audioReadAloudListPopup.dismiss();
             return;
         }
-        ListView listView = new ListView(container.$context());
-        listView.setDividerHeight(1);
-        listView.setBackgroundColor(Color.rgb(32, 33, 35));
-        ArrayAdapter<String> adapter = new ArrayAdapter<String>(
-                container.$context(),
-                android.R.layout.simple_list_item_1,
-                audioReadAloudListItems
-        ) {
-            @Override
-            public View getView(int position, View convertView, ViewGroup parent) {
-                View view = super.getView(position, convertView, parent);
-                if (view instanceof TextView) {
-                    ((TextView) view).setTextColor(Color.WHITE);
-                    ((TextView) view).setBackgroundColor(Color.rgb(32, 33, 35));
+        LinearLayout menuRoot = new LinearLayout(container.$context());
+        menuRoot.setOrientation(LinearLayout.VERTICAL);
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(Color.rgb(12, 12, 12));
+        bg.setCornerRadius(dp(10));
+        menuRoot.setBackground(bg);
+        menuRoot.setPadding(dp(10), dp(10), dp(10), dp(10));
+
+        for (int i = 0; i < audioReadAloudListItems.size(); i++) {
+            final int index = i;
+            final String label = audioReadAloudListItems.get(i);
+            TextView item = new TextView(container.$context());
+            item.setText("🔊  " + label);
+            item.setTextColor(Color.WHITE);
+            item.setTextSize(14);
+            item.setPadding(dp(8), dp(10), dp(8), dp(10));
+            item.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    String selected = index < audioReadAloudReturnValues.size() ? audioReadAloudReturnValues.get(index) : label;
+                    lastSelectedAudioReadAloudItem = selected;
+                    AudioReadAloudListItemSelected(source, selected, index + 1);
+                    dismissAudioReadAloudList();
                 }
-                return view;
+            });
+            menuRoot.addView(item);
+            if (i < audioReadAloudListItems.size() - 1) {
+                View line = new View(container.$context());
+                line.setBackgroundColor(Color.rgb(70, 70, 70));
+                menuRoot.addView(line, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(1)));
             }
-        };
-        listView.setAdapter(adapter);
-        listView.setOnItemClickListener(new AdapterView.OnItemClickListener() {
-            @Override
-            public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
-                String selected = position < audioReadAloudReturnValues.size() ? audioReadAloudReturnValues.get(position) : audioReadAloudListItems.get(position);
-                lastSelectedAudioReadAloudItem = selected;
-                AudioReadAloudListItemSelected(source, selected, position + 1);
-                dismissAudioReadAloudList();
-            }
-        });
+        }
+
         int popupWidth = Math.max(dp(220), anchor.getWidth());
-        audioReadAloudListPopup = new PopupWindow(listView, popupWidth, ViewGroup.LayoutParams.WRAP_CONTENT, true);
+        audioReadAloudListPopup = new PopupWindow(menuRoot, popupWidth, ViewGroup.LayoutParams.WRAP_CONTENT, true);
         configurePopupWindow(audioReadAloudListPopup);
         showPopupBelowAnchor(audioReadAloudListPopup, anchor, 0, dp(6));
     }
@@ -920,13 +922,13 @@ public class ChatInputBox extends AndroidViewComponent {
                 Rect visibleFrame = new Rect();
                 root.getWindowVisibleDisplayFrame(visibleFrame);
 
+                int[] rootLocation = new int[2];
+                root.getLocationOnScreen(rootLocation);
                 int desiredX = anchorX + xoff;
                 int minX = visibleFrame.left + dp(8);
                 int maxX = Math.max(minX, visibleFrame.right - popupWidth - dp(8));
-                int clampedX = Math.max(minX, Math.min(desiredX, maxX));
-
-                int[] rootLocation = new int[2];
-                root.getLocationOnScreen(rootLocation);
+                int clampedXOnScreen = Math.max(minX, Math.min(desiredX, maxX));
+                int clampedX = clampedXOnScreen - rootLocation[0];
                 int yBelow = anchorY - rootLocation[1] + anchor.getHeight() + yoff;
                 int yAbove = anchorY - rootLocation[1] - yoff;
 
