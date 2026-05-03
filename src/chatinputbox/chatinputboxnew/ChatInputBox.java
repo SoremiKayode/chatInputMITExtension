@@ -374,70 +374,56 @@ public class ChatInputBox extends AndroidViewComponent {
     @SimpleFunction(description = "Tracks prompt/message history and renders it. Appends prompt + AI response until ResetConversationStateList is called.")
     public void DisplayAIMessageWithState(String message, String prompt, String listJson) {
         try {
-            JSONArray mergedState = mergeStateLists(conversationStateList, parseOrFallbackList(listJson, new JSONArray()));
+            JSONArray mergedState = copyJsonArray(conversationStateList);
+            JSONArray incoming = parseOrFallbackList(listJson, new JSONArray());
+            if (mergedState.length() == 0 && incoming.length() > 0) {
+                mergedState = copyJsonArray(incoming);
+            }
 
             String safePrompt = prompt == null ? "" : prompt.trim();
             String safeMessage = message == null ? "" : message.trim();
-            String previousAssistantTranscript = buildAssistantOnlyTranscript(mergedState);
-            String incrementalMessage = extractIncrementalAssistantMessage(safeMessage, previousAssistantTranscript);
-            String generatedTag = generateConversationTagFromPrompt(safePrompt);
-
-            JSONObject latest = mergedState.length() > 0 ? mergedState.optJSONObject(mergedState.length() - 1) : null;
-            String latestPrompt = latest == null ? "" : latest.optString("prompt", "").trim();
-            String latestMessage = latest == null ? "" : latest.optString("message", "").trim();
-
             boolean hasPrompt = safePrompt.length() > 0;
             boolean hasMessage = safeMessage.length() > 0;
 
-            if (hasPrompt || hasMessage) {
-                if (!hasPrompt && hasMessage) {
-                    String resolvedMessage = incrementalMessage.length() > 0 ? incrementalMessage : safeMessage;
-                    int attachIndex = -1;
-                    for (int i = 0; i < mergedState.length(); i++) {
-                        JSONObject candidate = mergedState.optJSONObject(i);
-                        if (candidate == null) continue;
-                        String candidatePrompt = candidate.optString("prompt", "").trim();
-                        String candidateMessage = candidate.optString("message", "").trim();
-                        if (candidatePrompt.length() > 0 && candidateMessage.length() == 0) {
-                            attachIndex = i;
-                            break;
-                        }
-                    }
-                    if (attachIndex >= 0) {
-                        JSONObject target = mergedState.optJSONObject(attachIndex);
-                        if (target != null) {
-                            target.put("message", resolvedMessage);
-                            if (target.optString("tag", "").trim().length() == 0) {
-                                target.put("tag", generateConversationTagFromPrompt(target.optString("prompt", "")));
-                            }
-                            target.put("datetime", nowIso());
-                            target.put("lastAssistantMessage", safeMessage);
-                            lastUpsertedConversationTag = target.optString("tag", generatedTag);
-                        }
-                    } else {
-                        JSONObject item = new JSONObject();
-                        item.put("prompt", "");
-                        item.put("message", resolvedMessage);
-                        item.put("tag", generatedTag);
-                        item.put("datetime", nowIso());
-                        item.put("lastAssistantMessage", safeMessage);
-                        mergedState.put(item);
-                        lastUpsertedConversationTag = generatedTag;
+            if (hasPrompt && !hasMessage) {
+                JSONObject item = new JSONObject();
+                item.put("prompt", safePrompt);
+                item.put("message", "");
+                item.put("tag", generateConversationTagFromPrompt(safePrompt));
+                item.put("datetime", nowIso());
+                item.put("lastAssistantMessage", "");
+                mergedState.put(item);
+            } else if (!hasPrompt && hasMessage) {
+                String previousAssistantTranscript = buildAssistantOnlyTranscript(mergedState);
+                String resolvedMessage = extractIncrementalAssistantMessage(safeMessage, previousAssistantTranscript);
+                int attachIndex = findFirstPendingPromptIndex(mergedState);
+                if (attachIndex >= 0) {
+                    JSONObject target = mergedState.optJSONObject(attachIndex);
+                    target.put("message", resolvedMessage);
+                    target.put("datetime", nowIso());
+                    target.put("lastAssistantMessage", safeMessage);
+                    if (target.optString("tag", "").trim().length() == 0) {
+                        target.put("tag", generateConversationTagFromPrompt(target.optString("prompt", "")));
                     }
                 } else {
-                    String resolvedMessage = incrementalMessage.length() > 0 ? incrementalMessage : safeMessage;
-                    boolean isDuplicateLast = safePrompt.equals(latestPrompt) && resolvedMessage.equals(latestMessage);
-                    if (!isDuplicateLast) {
-                        JSONObject item = new JSONObject();
-                        item.put("prompt", safePrompt);
-                        item.put("message", resolvedMessage);
-                        item.put("tag", generatedTag);
-                        item.put("datetime", nowIso());
-                        item.put("lastAssistantMessage", safeMessage);
-                        mergedState.put(item);
-                        lastUpsertedConversationTag = generatedTag;
-                    }
+                    JSONObject item = new JSONObject();
+                    item.put("prompt", "");
+                    item.put("message", resolvedMessage);
+                    item.put("tag", "chat_" + System.currentTimeMillis());
+                    item.put("datetime", nowIso());
+                    item.put("lastAssistantMessage", safeMessage);
+                    mergedState.put(item);
                 }
+            } else if (hasPrompt && hasMessage) {
+                String previousAssistantTranscript = buildAssistantOnlyTranscript(mergedState);
+                String resolvedMessage = extractIncrementalAssistantMessage(safeMessage, previousAssistantTranscript);
+                JSONObject item = new JSONObject();
+                item.put("prompt", safePrompt);
+                item.put("message", resolvedMessage);
+                item.put("tag", generateConversationTagFromPrompt(safePrompt));
+                item.put("datetime", nowIso());
+                item.put("lastAssistantMessage", safeMessage);
+                mergedState.put(item);
             }
 
             syncState(mergedState);
@@ -1176,6 +1162,29 @@ public class ChatInputBox extends AndroidViewComponent {
         return sb.toString();
     }
 
+    private JSONArray copyJsonArray(JSONArray source) {
+        JSONArray copy = new JSONArray();
+        if (source == null) return copy;
+        for (int i = 0; i < source.length(); i++) {
+            copy.put(source.opt(i));
+        }
+        return copy;
+    }
+
+    private int findFirstPendingPromptIndex(JSONArray state) {
+        if (state == null) return -1;
+        for (int i = 0; i < state.length(); i++) {
+            JSONObject item = state.optJSONObject(i);
+            if (item == null) continue;
+            String prompt = item.optString("prompt", "").trim();
+            String message = item.optString("message", "").trim();
+            if (prompt.length() > 0 && message.length() == 0) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
     private String extractIncrementalAssistantMessage(String fullMessage, String previousAssistantTranscript) {
         if (fullMessage == null) return "";
 
@@ -1188,7 +1197,12 @@ public class ChatInputBox extends AndroidViewComponent {
             return full.substring(previous.length()).trim();
         }
 
-        return fullMessage.trim();
+        int index = full.indexOf(previous);
+        if (index >= 0) {
+            return full.substring(index + previous.length()).trim();
+        }
+
+        return full.trim();
     }
 
     private String normalizeAssistantText(String text) {
