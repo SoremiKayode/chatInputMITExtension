@@ -595,7 +595,10 @@ public class ChatInputBox extends AndroidViewComponent {
     }
 
     @SimpleFunction(description = "Clears all AI messages.")
-    public void ClearMessages() { messagesBox.removeAllViews(); }
+    public void ClearMessages() {
+        handler.removeCallbacksAndMessages(null);
+        messagesBox.removeAllViews();
+    }
     @SimpleFunction(description = "Set whether AI is currently generating (controls send button state/visibility).")
     public void SetGenerating(boolean generating) { isGenerating = generating; refreshSendButtonState(); }
 
@@ -889,8 +892,8 @@ public class ChatInputBox extends AndroidViewComponent {
 
 
     private void redrawConversationFromStateList() {
-        ClearMessages();
         handler.removeCallbacksAndMessages(null);
+        messagesBox.removeAllViews();
         messagesBox.setGravity(Gravity.NO_GRAVITY);
 
         for (int i = 0; i < conversationStateList.length(); i++) {
@@ -905,18 +908,19 @@ public class ChatInputBox extends AndroidViewComponent {
             }
 
             if (responseText.length() > 0) {
-                addAIMessageImmediately(responseText);
+                DisplayAIMessageImmediate(responseText);
             }
         }
 
         scrollToBottom();
     }
 
-    private void addAIMessageImmediately(String message) {
-        ArrayList<View> sections = renderMessage(message == null ? "" : message);
+    private void DisplayAIMessageImmediate(String message) {
+        ArrayList<View> sections = renderMessage(message);
         for (int i = 0; i < sections.size(); i++) {
             messagesBox.addView(sections.get(i));
         }
+        scrollToBottom();
     }
 
     private void showDrawerItemAction(final TextView row, final String id, final String title, final String content) {
