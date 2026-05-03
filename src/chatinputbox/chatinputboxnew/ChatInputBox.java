@@ -374,10 +374,7 @@ public class ChatInputBox extends AndroidViewComponent {
     @SimpleFunction(description = "Tracks prompt/message history and renders it. Appends prompt + AI response until ResetConversationStateList is called.")
     public void DisplayAIMessageWithState(String message, String prompt, String listJson) {
         try {
-            JSONArray mergedState = parseOrFallbackList(listJson, conversationStateList);
-            if (mergedState.length() == 0 && conversationStateList.length() > 0) {
-                mergedState = parseOrFallbackList(null, conversationStateList);
-            }
+            JSONArray mergedState = mergeStateLists(conversationStateList, parseOrFallbackList(listJson, new JSONArray()));
 
             String safePrompt = prompt == null ? "" : prompt.trim();
             String safeMessage = message == null ? "" : message.trim();
@@ -599,7 +596,7 @@ public class ChatInputBox extends AndroidViewComponent {
 
     private View makeUserPromptBubble(String promptText) {
         final String fullPrompt = promptText == null ? "" : promptText.trim();
-        final String displayPrompt = truncatePromptPreview(fullPrompt, 24);
+        final String displayPrompt = fullPrompt;
         LinearLayout row = new LinearLayout(container.$context());
         row.setOrientation(LinearLayout.VERTICAL);
         LinearLayout.LayoutParams rowLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -1027,6 +1024,36 @@ public class ChatInputBox extends AndroidViewComponent {
         }
         out.append(" …");
         return out.toString();
+    }
+
+
+    private JSONArray mergeStateLists(JSONArray base, JSONArray incoming) {
+        JSONArray merged = new JSONArray();
+        appendUniqueConversationItems(merged, base);
+        appendUniqueConversationItems(merged, incoming);
+        return merged;
+    }
+
+    private void appendUniqueConversationItems(JSONArray target, JSONArray source) {
+        if (source == null) return;
+        for (int i = 0; i < source.length(); i++) {
+            JSONObject candidate = source.optJSONObject(i);
+            if (candidate == null) continue;
+            String prompt = candidate.optString("prompt", "").trim();
+            String message = candidate.optString("message", "").trim();
+            boolean duplicate = false;
+            for (int j = 0; j < target.length(); j++) {
+                JSONObject existing = target.optJSONObject(j);
+                if (existing == null) continue;
+                String existingPrompt = existing.optString("prompt", "").trim();
+                String existingMessage = existing.optString("message", "").trim();
+                if (prompt.equals(existingPrompt) && message.equals(existingMessage)) {
+                    duplicate = true;
+                    break;
+                }
+            }
+            if (!duplicate) target.put(candidate);
+        }
     }
 
     private JSONArray parseOrFallbackList(String json, JSONArray fallback) {
