@@ -379,19 +379,12 @@ public class ChatInputBox extends AndroidViewComponent {
                 syncState(initialState);
             }
             String safePrompt = prompt == null ? "" : prompt.trim();
-            String safeMessage = message == null ? "" : message;
+            String safeMessage = message == null ? "" : message.trim();
             String generatedTag = generateConversationTagFromPrompt(safePrompt);
-            String priorCombined = "";
-            int len = conversationStateList.length();
-            if (len > 0) {
-                JSONObject last = conversationStateList.optJSONObject(len - 1);
-                if (last != null) priorCombined = last.optString("message", "");
-            }
-            String mergedMessage = mergePromptIntoResponse(priorCombined, safePrompt, safeMessage);
 
             JSONObject item = new JSONObject();
             item.put("prompt", safePrompt);
-            item.put("message", mergedMessage);
+            item.put("message", safeMessage);
             item.put("tag", generatedTag);
             item.put("datetime", nowIso());
             lastUpsertedConversationTag = generatedTag;
@@ -399,7 +392,7 @@ public class ChatInputBox extends AndroidViewComponent {
             conversationStateList.put(item);
             syncState(conversationStateList);
 
-            redrawConversationFromCombinedMessage(mergedMessage);
+            redrawConversationFromStateList();
         } catch (Exception e) {
             DisplayAIMessage(message == null ? "" : message);
         }
@@ -606,20 +599,8 @@ public class ChatInputBox extends AndroidViewComponent {
         row.setLayoutParams(rowLp);
         row.setGravity(Gravity.END);
 
-        LinearLayout bubbleWrap = new LinearLayout(container.$context());
-        bubbleWrap.setOrientation(LinearLayout.VERTICAL);
-        bubbleWrap.setPadding(dp(1), dp(1), dp(1), dp(1));
-        GradientDrawable wrapBg = new GradientDrawable();
-        wrapBg.setColor(Color.rgb(74, 76, 94));
-        wrapBg.setCornerRadius(dp(20));
-        wrapBg.setStroke(dp(1), Color.rgb(125, 129, 156));
-        bubbleWrap.setBackground(wrapBg);
-
-        TextView bubble = new TextView(container.$context());
-        bubble.setText(displayPrompt);
-        bubble.setTextColor(Color.rgb(238, 241, 248));
-        bubble.setTextSize(15);
-        bubble.setLineSpacing(dp(3), 1.0f);
+        LinearLayout bubble = new LinearLayout(container.$context());
+        bubble.setOrientation(LinearLayout.VERTICAL);
         bubble.setPadding(dp(14), dp(10), dp(14), dp(10));
 
         GradientDrawable bubbleBg = new GradientDrawable();
@@ -633,11 +614,17 @@ public class ChatInputBox extends AndroidViewComponent {
         bubbleLp.setMargins(dp(42), 0, 0, 0);
         bubble.setLayoutParams(bubbleLp);
 
+        TextView promptTextView = new TextView(container.$context());
+        promptTextView.setText(displayPrompt);
+        promptTextView.setTextColor(Color.rgb(238, 241, 248));
+        promptTextView.setTextSize(15);
+        promptTextView.setLineSpacing(dp(3), 1.0f);
+
         final TextView copyBtn = new TextView(container.$context());
         copyBtn.setText("Copy");
         copyBtn.setTextColor(Color.rgb(215, 220, 240));
         copyBtn.setTextSize(12);
-        copyBtn.setPadding(dp(12), dp(6), dp(12), dp(8));
+        copyBtn.setPadding(0, dp(6), 0, 0);
         copyBtn.setGravity(Gravity.END);
         copyBtn.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -654,19 +641,9 @@ public class ChatInputBox extends AndroidViewComponent {
             }
         });
 
-        TextView tail = new TextView(container.$context());
-        tail.setText("◆");
-        tail.setTextColor(Color.rgb(125, 129, 156));
-        tail.setTextSize(10);
-        LinearLayout.LayoutParams tailLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        tailLp.gravity = Gravity.END;
-        tailLp.setMargins(0, -dp(4), dp(10), 0);
-        tail.setLayoutParams(tailLp);
-
-        bubbleWrap.addView(bubble);
-        bubbleWrap.addView(copyBtn);
-        row.addView(bubbleWrap);
-        row.addView(tail);
+        bubble.addView(promptTextView);
+        bubble.addView(copyBtn);
+        row.addView(bubble);
         return row;
     }
 
@@ -830,61 +807,21 @@ public class ChatInputBox extends AndroidViewComponent {
 
 
 
-    private String mergePromptIntoResponse(String previousCombined, String newPrompt, String latestResponse) {
-        String response = latestResponse == null ? "" : latestResponse.trim();
-        String combined = previousCombined == null ? "" : previousCombined.trim();
-        String promptBlock = newPrompt == null || newPrompt.trim().length() == 0 ? "" : "[PROMPT] " + newPrompt.trim();
-
-        if (combined.length() > 0 && response.startsWith(combined)) {
-            String remainder = response.substring(combined.length()).trim();
-            StringBuilder rebuilt = new StringBuilder();
-            rebuilt.append(combined);
-            if (promptBlock.length() > 0) rebuilt.append("\n\n").append(promptBlock);
-            if (remainder.length() > 0) rebuilt.append("\n\n").append(remainder);
-            return rebuilt.toString().trim();
-        }
-
-        if (combined.length() > 0 && response.contains(combined)) {
-            int idx = response.indexOf(combined);
-            String before = response.substring(0, idx).trim();
-            String after = response.substring(idx + combined.length()).trim();
-            StringBuilder rebuilt = new StringBuilder();
-            if (before.length() > 0) rebuilt.append(before).append("\n\n");
-            rebuilt.append(combined);
-            if (promptBlock.length() > 0) rebuilt.append("\n\n").append(promptBlock);
-            if (after.length() > 0) rebuilt.append("\n\n").append(after);
-            return rebuilt.toString().trim();
-        }
-
-        if (promptBlock.length() > 0 && response.length() > 0) return (promptBlock + "\n\n" + response).trim();
-        if (promptBlock.length() > 0) return promptBlock;
-        return response;
-    }
-
-    private void redrawConversationFromCombinedMessage(String combinedMessage) {
+    private void redrawConversationFromStateList() {
         ClearMessages();
-        if (combinedMessage == null || combinedMessage.trim().length() == 0) return;
-
-        String[] blocks = combinedMessage.split("\n\n");
-        StringBuilder aiText = new StringBuilder();
-        for (int i = 0; i < blocks.length; i++) {
-            String block = blocks[i].trim();
-            if (block.startsWith("[PROMPT]")) {
-                if (aiText.length() > 0) {
-                    DisplayAIMessage(aiText.toString().trim());
-                    aiText.setLength(0);
-                }
-                String promptText = block.substring("[PROMPT]".length()).trim();
-                if (promptText.length() > 0) {
-                    messagesBox.addView(makeUserPromptBubble(promptText));
-                    scrollToBottom();
-                }
-            } else {
-                if (aiText.length() > 0) aiText.append("\n\n");
-                aiText.append(block);
+        for (int i = 0; i < conversationStateList.length(); i++) {
+            JSONObject item = conversationStateList.optJSONObject(i);
+            if (item == null) continue;
+            String promptText = item.optString("prompt", "").trim();
+            String responseText = item.optString("message", "").trim();
+            if (promptText.length() > 0) {
+                messagesBox.addView(makeUserPromptBubble(promptText));
+                scrollToBottom();
+            }
+            if (responseText.length() > 0) {
+                DisplayAIMessage(responseText);
             }
         }
-        if (aiText.length() > 0) DisplayAIMessage(aiText.toString().trim());
     }
 
     private void showDrawerItemAction(final TextView row, final String id, final String title, final String content) {
