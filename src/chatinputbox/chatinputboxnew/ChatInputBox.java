@@ -384,16 +384,53 @@ public class ChatInputBox extends AndroidViewComponent {
             String latestPrompt = latest == null ? "" : latest.optString("prompt", "").trim();
             String latestMessage = latest == null ? "" : latest.optString("message", "").trim();
 
-            boolean shouldAppend = safePrompt.length() > 0 || safeMessage.length() > 0;
-            boolean isDuplicateLast = safePrompt.equals(latestPrompt) && safeMessage.equals(latestMessage);
-            if (shouldAppend && !isDuplicateLast) {
-                JSONObject item = new JSONObject();
-                item.put("prompt", safePrompt);
-                item.put("message", safeMessage);
-                item.put("tag", generatedTag);
-                item.put("datetime", nowIso());
-                mergedState.put(item);
-                lastUpsertedConversationTag = generatedTag;
+            boolean hasPrompt = safePrompt.length() > 0;
+            boolean hasMessage = safeMessage.length() > 0;
+
+            if (hasPrompt || hasMessage) {
+                if (!hasPrompt && hasMessage) {
+                    int attachIndex = -1;
+                    for (int i = mergedState.length() - 1; i >= 0; i--) {
+                        JSONObject candidate = mergedState.optJSONObject(i);
+                        if (candidate == null) continue;
+                        String candidatePrompt = candidate.optString("prompt", "").trim();
+                        String candidateMessage = candidate.optString("message", "").trim();
+                        if (candidatePrompt.length() > 0 && candidateMessage.length() == 0) {
+                            attachIndex = i;
+                            break;
+                        }
+                    }
+                    if (attachIndex >= 0) {
+                        JSONObject target = mergedState.optJSONObject(attachIndex);
+                        if (target != null) {
+                            target.put("message", safeMessage);
+                            if (target.optString("tag", "").trim().length() == 0) {
+                                target.put("tag", generateConversationTagFromPrompt(target.optString("prompt", "")));
+                            }
+                            target.put("datetime", nowIso());
+                            lastUpsertedConversationTag = target.optString("tag", generatedTag);
+                        }
+                    } else {
+                        JSONObject item = new JSONObject();
+                        item.put("prompt", "");
+                        item.put("message", safeMessage);
+                        item.put("tag", generatedTag);
+                        item.put("datetime", nowIso());
+                        mergedState.put(item);
+                        lastUpsertedConversationTag = generatedTag;
+                    }
+                } else {
+                    boolean isDuplicateLast = safePrompt.equals(latestPrompt) && safeMessage.equals(latestMessage);
+                    if (!isDuplicateLast) {
+                        JSONObject item = new JSONObject();
+                        item.put("prompt", safePrompt);
+                        item.put("message", safeMessage);
+                        item.put("tag", generatedTag);
+                        item.put("datetime", nowIso());
+                        mergedState.put(item);
+                        lastUpsertedConversationTag = generatedTag;
+                    }
+                }
             }
 
             syncState(mergedState);
@@ -600,13 +637,13 @@ public class ChatInputBox extends AndroidViewComponent {
         LinearLayout row = new LinearLayout(container.$context());
         row.setOrientation(LinearLayout.VERTICAL);
         LinearLayout.LayoutParams rowLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        rowLp.setMargins(0, dp(4), 0, dp(6));
+        rowLp.setMargins(0, dp(2), 0, dp(4));
         row.setLayoutParams(rowLp);
         row.setGravity(Gravity.END);
 
         LinearLayout bubble = new LinearLayout(container.$context());
         bubble.setOrientation(LinearLayout.VERTICAL);
-        bubble.setPadding(dp(14), dp(10), dp(14), dp(10));
+        bubble.setPadding(dp(12), dp(8), dp(12), dp(8));
 
         GradientDrawable bubbleBg = new GradientDrawable();
         bubbleBg.setColor(Color.rgb(64, 68, 88));
@@ -628,7 +665,7 @@ public class ChatInputBox extends AndroidViewComponent {
         copyBtn.setText("Copy");
         copyBtn.setTextColor(Color.rgb(215, 220, 240));
         copyBtn.setTextSize(12);
-        copyBtn.setPadding(0, dp(6), 0, 0);
+        copyBtn.setPadding(0, dp(4), 0, 0);
         copyBtn.setGravity(Gravity.END);
         copyBtn.setOnClickListener(new View.OnClickListener() {
             @Override
