@@ -890,18 +890,32 @@ public class ChatInputBox extends AndroidViewComponent {
 
     private void redrawConversationFromStateList() {
         ClearMessages();
+        handler.removeCallbacksAndMessages(null);
+        messagesBox.setGravity(Gravity.NO_GRAVITY);
+
         for (int i = 0; i < conversationStateList.length(); i++) {
             JSONObject item = conversationStateList.optJSONObject(i);
             if (item == null) continue;
+
             String promptText = item.optString("prompt", "").trim();
             String responseText = item.optString("message", "").trim();
+
             if (promptText.length() > 0) {
                 messagesBox.addView(makeUserPromptBubble(promptText));
-                scrollToBottom();
             }
+
             if (responseText.length() > 0) {
-                DisplayAIMessage(responseText);
+                addAIMessageImmediately(responseText);
             }
+        }
+
+        scrollToBottom();
+    }
+
+    private void addAIMessageImmediately(String message) {
+        ArrayList<View> sections = renderMessage(message == null ? "" : message);
+        for (int i = 0; i < sections.size(); i++) {
+            messagesBox.addView(sections.get(i));
         }
     }
 
