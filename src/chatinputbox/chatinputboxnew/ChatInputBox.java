@@ -393,7 +393,7 @@ public class ChatInputBox extends AndroidViewComponent {
                 if (!hasPrompt && hasMessage) {
                     String resolvedMessage = incrementalMessage.length() > 0 ? incrementalMessage : safeMessage;
                     int attachIndex = -1;
-                    for (int i = mergedState.length() - 1; i >= 0; i--) {
+                    for (int i = 0; i < mergedState.length(); i++) {
                         JSONObject candidate = mergedState.optJSONObject(i);
                         if (candidate == null) continue;
                         String candidatePrompt = candidate.optString("prompt", "").trim();
@@ -1165,8 +1165,9 @@ public class ChatInputBox extends AndroidViewComponent {
             JSONObject item = state.optJSONObject(i);
             if (item == null) continue;
 
+            String prompt = item.optString("prompt", "").trim();
             String message = item.optString("message", "").trim();
-            if (message.length() > 0) {
+            if (prompt.length() > 0 && message.length() > 0) {
                 if (sb.length() > 0) sb.append("\n\n");
                 sb.append(message);
             }
