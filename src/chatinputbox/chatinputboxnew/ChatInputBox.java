@@ -375,7 +375,8 @@ public class ChatInputBox extends AndroidViewComponent {
     public void DisplayAIMessageWithState(String message, String prompt, String listJson) {
         try {
             if (conversationStateList.length() == 0) {
-                conversationStateList = parseOrFallbackList(listJson, conversationStateList);
+                JSONArray initialState = parseOrFallbackList(listJson, conversationStateList);
+                syncState(initialState);
             }
             String safePrompt = prompt == null ? "" : prompt.trim();
             String safeMessage = message == null ? "" : message;
