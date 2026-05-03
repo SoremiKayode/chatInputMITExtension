@@ -371,24 +371,19 @@ public class ChatInputBox extends AndroidViewComponent {
         }
     }
 
-    @SimpleFunction(description = "Tracks prompt/message history and renders it. Uses message, prompt, and listJson.")
+    @SimpleFunction(description = "Tracks prompt/message history and renders it. Appends prompt + AI response until ResetConversationStateList is called.")
     public void DisplayAIMessageWithState(String message, String prompt, String listJson) {
-        DisplayAIMessageWithStateCore(message, prompt, listJson, "");
-    }
-
-    private void DisplayAIMessageWithStateCore(String message, String prompt, String listJson, String conversationTagOverride) {
-        JSONArray state = parseOrFallbackList(listJson, conversationStateList);
         try {
+            if (conversationStateList.length() == 0) {
+                conversationStateList = parseOrFallbackList(listJson, conversationStateList);
+            }
             String safePrompt = prompt == null ? "" : prompt.trim();
             String safeMessage = message == null ? "" : message;
-            String providedTag = conversationTagOverride == null ? "" : conversationTagOverride.trim();
-            String generatedTag = providedTag.length() > 0
-                    ? providedTag
-                    : generateConversationTagFromPrompt(safePrompt);
+            String generatedTag = generateConversationTagFromPrompt(safePrompt);
             String priorCombined = "";
-            int len = state.length();
+            int len = conversationStateList.length();
             if (len > 0) {
-                JSONObject last = state.optJSONObject(len - 1);
+                JSONObject last = conversationStateList.optJSONObject(len - 1);
                 if (last != null) priorCombined = last.optString("message", "");
             }
             String mergedMessage = mergePromptIntoResponse(priorCombined, safePrompt, safeMessage);
@@ -400,7 +395,6 @@ public class ChatInputBox extends AndroidViewComponent {
             item.put("datetime", nowIso());
             lastUpsertedConversationTag = generatedTag;
 
-            ResetConversationStateList();
             conversationStateList.put(item);
             syncState(conversationStateList);
 
@@ -408,16 +402,6 @@ public class ChatInputBox extends AndroidViewComponent {
         } catch (Exception e) {
             DisplayAIMessage(message == null ? "" : message);
         }
-    }
-
-    @SimpleFunction(description = "Extended state render that accepts conversationTagOverride as a 4th argument.")
-    public void DisplayAIMessageWithStateTag(String message, String prompt, String listJson, String conversationTagOverride) {
-        DisplayAIMessageWithStateCore(message, prompt, listJson, conversationTagOverride);
-    }
-
-    @SimpleFunction(description = "Extended state render for legacy callers with an extra unused 5th argument.")
-    public void DisplayAIMessageWithStateLegacy(String message, String prompt, String listJson, String conversationTagOverride, String ignoredExtraArg) {
-        DisplayAIMessageWithStateCore(message, prompt, listJson, conversationTagOverride);
     }
 
     @SimpleFunction(description = "Populate drawer from TinyDB query/object map or array format. Supports {\"tag\":[\"title\",\"content\"]} and [{\"tag\":[\"title\",\"content\"]}, ...].")
