@@ -378,8 +378,8 @@ public class ChatInputBox extends AndroidViewComponent {
 
             String safePrompt = prompt == null ? "" : prompt.trim();
             String safeMessage = message == null ? "" : message.trim();
-            String previousAssistantMessage = extractLastAssistantMessage(mergedState);
-            String incrementalMessage = extractIncrementalAssistantMessage(safeMessage, previousAssistantMessage);
+            String previousAssistantTranscript = buildAssistantOnlyTranscript(mergedState);
+            String incrementalMessage = extractIncrementalAssistantMessage(safeMessage, previousAssistantTranscript);
             String generatedTag = generateConversationTagFromPrompt(safePrompt);
 
             JSONObject latest = mergedState.length() > 0 ? mergedState.optJSONObject(mergedState.length() - 1) : null;
@@ -1157,33 +1157,42 @@ public class ChatInputBox extends AndroidViewComponent {
         return out.toString();
     }
 
-    private String extractLastAssistantMessage(JSONArray state) {
+    private String buildAssistantOnlyTranscript(JSONArray state) {
+        StringBuilder sb = new StringBuilder();
         if (state == null) return "";
-        for (int i = state.length() - 1; i >= 0; i--) {
+
+        for (int i = 0; i < state.length(); i++) {
             JSONObject item = state.optJSONObject(i);
             if (item == null) continue;
-            String previous = item.optString("lastAssistantMessage", "").trim();
-            if (previous.length() > 0) return previous;
+
             String message = item.optString("message", "").trim();
-            if (message.length() > 0) return message;
+            if (message.length() > 0) {
+                if (sb.length() > 0) sb.append("\n\n");
+                sb.append(message);
+            }
         }
-        return "";
+
+        return sb.toString();
     }
 
-    private String extractIncrementalAssistantMessage(String current, String previous) {
-        String now = current == null ? "" : current.trim();
-        String before = previous == null ? "" : previous.trim();
-        if (now.length() == 0) return "";
-        if (before.length() == 0) return now;
-        if (now.equals(before)) return "";
-        if (now.startsWith(before)) return now.substring(before.length()).trim();
+    private String extractIncrementalAssistantMessage(String fullMessage, String previousAssistantTranscript) {
+        if (fullMessage == null) return "";
 
-        int overlapStart = now.indexOf(before);
-        if (overlapStart >= 0) {
-            String candidate = (now.substring(0, overlapStart) + " " + now.substring(overlapStart + before.length())).trim();
-            return candidate.replaceAll("\\s+", " ").trim();
+        String full = normalizeAssistantText(fullMessage);
+        String previous = normalizeAssistantText(previousAssistantTranscript);
+
+        if (previous.length() == 0) return full.trim();
+
+        if (full.startsWith(previous)) {
+            return full.substring(previous.length()).trim();
         }
-        return now;
+
+        return fullMessage.trim();
+    }
+
+    private String normalizeAssistantText(String text) {
+        if (text == null) return "";
+        return text.replace("\r\n", "\n").replace("\r", "\n").trim();
     }
 
 
