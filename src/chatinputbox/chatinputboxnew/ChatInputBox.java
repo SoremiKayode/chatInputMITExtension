@@ -547,6 +547,15 @@ public class ChatInputBox extends AndroidViewComponent {
     private void openConversationFromParts(String conversationId, JSONArray conversationParts) {
         ClearMessages();
         currentConversationId = conversationId == null ? "" : conversationId;
+
+        JSONArray parsedState = parseConversationStateList(conversationParts == null ? null : conversationParts.opt(2));
+        if (parsedState.length() > 0) {
+            syncState(parsedState);
+            redrawConversationFromStateList();
+            currentConversationContent = buildTranscriptFromState(conversationStateList);
+            return;
+        }
+
         String stateJson = conversationParts == null ? "" : conversationParts.optString(2, "").trim();
         if (stateJson.length() > 0 && loadConversationStateFromJson(stateJson)) {
             currentConversationContent = buildTranscriptFromState(conversationStateList);
@@ -1011,7 +1020,7 @@ public class ChatInputBox extends AndroidViewComponent {
             if (resolvedTitle.length() == 0) resolvedTitle = ExtractTitleFromAIText(buildTranscriptFromState(conversationStateList));
             values.put(resolvedTitle);
             values.put(buildTranscriptFromState(conversationStateList));
-            values.put(CurrentConversationListItem());
+            values.put(copyStateList(conversationStateList));
             values.put(nowIso());
             return values.toString();
         } catch (Exception e) {
@@ -1054,15 +1063,27 @@ public class ChatInputBox extends AndroidViewComponent {
     }
 
 
-    private JSONArray parseConversationStateList(String source) {
-        String safe = source == null ? "" : source.trim();
-        if (safe.length() == 0) return new JSONArray();
+    private JSONArray parseConversationStateList(Object source) {
+        if (source == null || source == JSONObject.NULL) return new JSONArray();
         try {
+            if (source instanceof JSONArray) return copyStateList((JSONArray) source);
+            if (source instanceof JSONObject) {
+                JSONObject obj = (JSONObject) source;
+                JSONArray wrapped = obj.optJSONArray("state");
+                if (wrapped != null) return copyStateList(wrapped);
+                JSONArray arr = new JSONArray();
+                arr.put(obj);
+                return arr;
+            }
+            String safe = source.toString().trim();
+            if (safe.length() == 0) return new JSONArray();
             if (safe.startsWith("[")) return new JSONArray(safe);
             if (safe.startsWith("{")) {
-                JSONObject one = new JSONObject(safe);
+                JSONObject obj = new JSONObject(safe);
+                JSONArray wrapped = obj.optJSONArray("state");
+                if (wrapped != null) return wrapped;
                 JSONArray arr = new JSONArray();
-                arr.put(one);
+                arr.put(obj);
                 return arr;
             }
         } catch (Exception ignored) {}
