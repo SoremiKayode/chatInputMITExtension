@@ -960,12 +960,9 @@ public class ChatInputBox extends AndroidViewComponent {
         }
     }
 
-    @SimpleFunction(description = "Returns CurrentConversationListItem JSON (single dictionary item with combined message history).")
+    @SimpleFunction(description = "Returns current conversation state list JSON for persistence.")
     public String CurrentConversationListItem() {
-        int len = conversationStateList.length();
-        if (len == 0) return "{}";
-        JSONObject obj = conversationStateList.optJSONObject(len - 1);
-        return obj == null ? "{}" : obj.toString();
+        return conversationStateList.toString();
     }
 
     @SimpleFunction(description = "Backward compatible alias for CurrentConversationListItem.")
@@ -980,7 +977,7 @@ public class ChatInputBox extends AndroidViewComponent {
         }
     }
 
-    @SimpleFunction(description = "Upserts CurrentConversationListItem into TinyDB entries JSON using its tag if available.")
+    @SimpleFunction(description = "Upserts full conversation list into TinyDB entries JSON. Uses current conversation id/tag when available.")
     public String UpsertConversationListForTinyDB(String tinyDbEntriesJson, String listJson) {
         JSONObject entries;
         try {
@@ -990,39 +987,54 @@ public class ChatInputBox extends AndroidViewComponent {
             entries = new JSONObject();
         }
 
-        JSONObject item = parseCurrentConversationItem(listJson);
-        if (item == null && conversationStateList.length() > 0) {
-            item = conversationStateList.optJSONObject(conversationStateList.length() - 1);
-        }
+        JSONArray state = parseConversationStateList(listJson);
+        if (state.length() == 0) state = copyStateList(conversationStateList);
 
-        String tag = item == null ? "" : item.optString("tag", "").trim();
-        if (tag.length() == 0) {
-            JSONArray fallbackList = new JSONArray();
-            if (item != null) fallbackList.put(item);
-            tag = generateConversationTagFromList(fallbackList);
-        }
+        String tag = resolveConversationTag(state);
 
         try {
-            JSONArray single = new JSONArray();
-            if (item != null) single.put(item);
-            entries.put(tag, single);
+            entries.put(tag, state);
             lastUpsertedConversationTag = tag;
         } catch (Exception ignored) {}
         return entries.toString();
     }
 
 
-    private JSONObject parseCurrentConversationItem(String source) {
+    private JSONArray parseConversationStateList(String source) {
         String safe = source == null ? "" : source.trim();
-        if (safe.length() == 0) return null;
+        if (safe.length() == 0) return new JSONArray();
         try {
-            if (safe.startsWith("{")) return new JSONObject(safe);
-            if (safe.startsWith("[")) {
-                JSONArray arr = new JSONArray(safe);
-                return arr.length() > 0 ? arr.optJSONObject(arr.length() - 1) : null;
+            if (safe.startsWith("[")) return new JSONArray(safe);
+            if (safe.startsWith("{")) {
+                JSONObject one = new JSONObject(safe);
+                JSONArray arr = new JSONArray();
+                arr.put(one);
+                return arr;
             }
         } catch (Exception ignored) {}
-        return null;
+        return new JSONArray();
+    }
+
+
+    private JSONArray copyStateList(JSONArray source) {
+        JSONArray copy = new JSONArray();
+        if (source == null) return copy;
+        for (int i = 0; i < source.length(); i++) copy.put(source.opt(i));
+        return copy;
+    }
+
+    private String resolveConversationTag(JSONArray state) {
+        String candidate = currentConversationId == null ? "" : currentConversationId.trim();
+        if (candidate.length() == 0 && state != null) {
+            for (int i = state.length() - 1; i >= 0; i--) {
+                JSONObject item = state.optJSONObject(i);
+                if (item == null) continue;
+                candidate = item.optString("tag", "").trim();
+                if (candidate.length() > 0) break;
+            }
+        }
+        if (candidate.length() == 0) candidate = generateConversationTagFromList(state);
+        return candidate;
     }
 
     @SimpleFunction(description = "Returns the tag used by the most recent UpsertConversationListForTinyDB call.")
