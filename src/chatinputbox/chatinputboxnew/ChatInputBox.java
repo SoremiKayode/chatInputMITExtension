@@ -374,24 +374,32 @@ public class ChatInputBox extends AndroidViewComponent {
     @SimpleFunction(description = "Tracks prompt/message history and renders it. Appends prompt + AI response until ResetConversationStateList is called.")
     public void DisplayAIMessageWithState(String message, String prompt, String listJson) {
         try {
-            if (conversationStateList.length() == 0) {
-                JSONArray initialState = parseOrFallbackList(listJson, conversationStateList);
-                syncState(initialState);
+            JSONArray mergedState = parseOrFallbackList(listJson, conversationStateList);
+            if (mergedState.length() == 0 && conversationStateList.length() > 0) {
+                mergedState = parseOrFallbackList(null, conversationStateList);
             }
+
             String safePrompt = prompt == null ? "" : prompt.trim();
             String safeMessage = message == null ? "" : message.trim();
             String generatedTag = generateConversationTagFromPrompt(safePrompt);
 
-            JSONObject item = new JSONObject();
-            item.put("prompt", safePrompt);
-            item.put("message", safeMessage);
-            item.put("tag", generatedTag);
-            item.put("datetime", nowIso());
-            lastUpsertedConversationTag = generatedTag;
+            JSONObject latest = mergedState.length() > 0 ? mergedState.optJSONObject(mergedState.length() - 1) : null;
+            String latestPrompt = latest == null ? "" : latest.optString("prompt", "").trim();
+            String latestMessage = latest == null ? "" : latest.optString("message", "").trim();
 
-            conversationStateList.put(item);
-            syncState(conversationStateList);
+            boolean shouldAppend = safePrompt.length() > 0 || safeMessage.length() > 0;
+            boolean isDuplicateLast = safePrompt.equals(latestPrompt) && safeMessage.equals(latestMessage);
+            if (shouldAppend && !isDuplicateLast) {
+                JSONObject item = new JSONObject();
+                item.put("prompt", safePrompt);
+                item.put("message", safeMessage);
+                item.put("tag", generatedTag);
+                item.put("datetime", nowIso());
+                mergedState.put(item);
+                lastUpsertedConversationTag = generatedTag;
+            }
 
+            syncState(mergedState);
             redrawConversationFromStateList();
         } catch (Exception e) {
             DisplayAIMessage(message == null ? "" : message);
@@ -595,7 +603,7 @@ public class ChatInputBox extends AndroidViewComponent {
         LinearLayout row = new LinearLayout(container.$context());
         row.setOrientation(LinearLayout.VERTICAL);
         LinearLayout.LayoutParams rowLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        rowLp.setMargins(0, dp(6), 0, dp(8));
+        rowLp.setMargins(0, dp(4), 0, dp(6));
         row.setLayoutParams(rowLp);
         row.setGravity(Gravity.END);
 
@@ -606,7 +614,6 @@ public class ChatInputBox extends AndroidViewComponent {
         GradientDrawable bubbleBg = new GradientDrawable();
         bubbleBg.setColor(Color.rgb(64, 68, 88));
         bubbleBg.setCornerRadius(dp(19));
-        bubbleBg.setStroke(dp(1), Color.rgb(142, 147, 176));
         bubble.setBackground(bubbleBg);
 
         LinearLayout.LayoutParams bubbleLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
