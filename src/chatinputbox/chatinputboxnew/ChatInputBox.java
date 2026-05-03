@@ -441,6 +441,7 @@ public class ChatInputBox extends AndroidViewComponent {
             }
 
             syncState(mergedState);
+            currentConversationContent = buildTranscriptFromState(conversationStateList);
             redrawConversationFromStateList();
         } catch (Exception e) {
             DisplayAIMessage(message == null ? "" : message);
@@ -498,11 +499,7 @@ public class ChatInputBox extends AndroidViewComponent {
                 row.setOnClickListener(new View.OnClickListener() {
                     @Override
                     public void onClick(View v) {
-                        ClearMessages();
-                        String content = conversationParts.optString(1, "");
-                        currentConversationId = conversationId;
-                        currentConversationContent = content;
-                        if (content.length() > 0) DisplayAIMessage(content);
+                        openConversationFromParts(conversationId, conversationParts);
                         ConversationSelected(conversationId, conversationParts.toString());
                     }
                 });
@@ -543,6 +540,47 @@ public class ChatInputBox extends AndroidViewComponent {
             });
             conversationList.addView(row);
         }
+    }
+
+
+
+    private void openConversationFromParts(String conversationId, JSONArray conversationParts) {
+        ClearMessages();
+        currentConversationId = conversationId == null ? "" : conversationId;
+        Object statePayload = conversationParts == null ? null : conversationParts.opt(2);
+        if (loadConversationStateFromPayload(statePayload)) {
+            currentConversationContent = buildTranscriptFromState(conversationStateList);
+            return;
+        }
+        String content = conversationParts == null ? "" : conversationParts.optString(1, "");
+        currentConversationContent = content;
+        if (content.length() > 0) DisplayAIMessage(content);
+    }
+
+    private boolean loadConversationStateFromPayload(Object statePayload) {
+        try {
+            JSONArray state = parseConversationStatePayload(statePayload);
+            if (state.length() == 0) return false;
+            syncState(state);
+            redrawConversationFromStateList();
+            return true;
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
+    private String buildTranscriptFromState(JSONArray state) {
+        if (state == null) return "";
+        StringBuilder out = new StringBuilder();
+        for (int i = 0; i < state.length(); i++) {
+            JSONObject item = state.optJSONObject(i);
+            if (item == null) continue;
+            String prompt = item.optString("prompt", "").trim();
+            String message = item.optString("message", "").trim();
+            if (prompt.length() > 0) out.append("User: ").append(prompt).append("\n");
+            if (message.length() > 0) out.append("Assistant: ").append(message).append("\n\n");
+        }
+        return out.toString().trim();
     }
 
     @SimpleFunction(description = "Extracts a title from AI text using first sentence/paragraph.")
@@ -965,6 +1003,22 @@ public class ChatInputBox extends AndroidViewComponent {
         return conversationStateList.toString();
     }
 
+    @SimpleFunction(description = "Builds drawer value list as [title, content, stateJson, datetime] from the active conversation state.")
+    public String CurrentConversationDrawerValueList(String title) {
+        try {
+            JSONArray values = new JSONArray();
+            String resolvedTitle = title == null ? "" : title.trim();
+            if (resolvedTitle.length() == 0) resolvedTitle = ExtractTitleFromAIText(buildTranscriptFromState(conversationStateList));
+            values.put(resolvedTitle);
+            values.put(buildTranscriptFromState(conversationStateList));
+            values.put(copyStateList(conversationStateList));
+            values.put(nowIso());
+            return values.toString();
+        } catch (Exception e) {
+            return "[]";
+        }
+    }
+
     @SimpleFunction(description = "Backward compatible alias for CurrentConversationListItem.")
     public String CurrentConversationStateItem() {
         return CurrentConversationListItem();
@@ -1000,15 +1054,29 @@ public class ChatInputBox extends AndroidViewComponent {
     }
 
 
+    private JSONArray parseConversationStatePayload(Object payload) {
+        if (payload == null) return new JSONArray();
+        if (payload instanceof JSONArray) return copyStateList((JSONArray) payload);
+        if (payload instanceof JSONObject) {
+            JSONArray arr = new JSONArray();
+            arr.put(payload);
+            return arr;
+        }
+        if (payload instanceof String) return parseConversationStateList((String) payload);
+        return new JSONArray();
+    }
+
     private JSONArray parseConversationStateList(String source) {
         String safe = source == null ? "" : source.trim();
         if (safe.length() == 0) return new JSONArray();
         try {
             if (safe.startsWith("[")) return new JSONArray(safe);
             if (safe.startsWith("{")) {
-                JSONObject one = new JSONObject(safe);
+                JSONObject obj = new JSONObject(safe);
+                JSONArray embedded = obj.optJSONArray("state");
+                if (embedded != null) return embedded;
                 JSONArray arr = new JSONArray();
-                arr.put(one);
+                arr.put(obj);
                 return arr;
             }
         } catch (Exception ignored) {}
