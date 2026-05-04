@@ -434,7 +434,7 @@ public class ChatInputBox extends AndroidViewComponent {
         }
     }
 
-    @SimpleFunction(description = "Populate drawer from TinyDB query/object map or array format. Supports {\"tag\":[\"title\",\"content\"]} and [{\"tag\":[\"title\",\"content\"]}, ...].")
+    @SimpleFunction(description = "Populate drawer from TinyDB query/object map or array format. Supports legacy [title,content,*] and TinyDB upsert state-list payloads.")
     public void SetConversationsFromDictionaryList(String jsonList) {
         conversationList.removeAllViews();
         drawerConversationMap.clear();
@@ -476,10 +476,7 @@ public class ChatInputBox extends AndroidViewComponent {
                 if (valueList == null) continue;
                 final JSONArray conversationParts = valueList;
                 drawerConversationMap.put(conversationId, conversationParts);
-                String configuredTitle = conversationParts.optString(0, "").trim();
-                if (configuredTitle.length() == 0) {
-                    configuredTitle = ExtractTitleFromAIText(conversationParts.optString(1, ""));
-                }
+                String configuredTitle = resolveDrawerTitle(conversationId, conversationParts);
                 final String drawerTitle = configuredTitle.length() == 0 ? conversationId : configuredTitle;
                 TextView row = makeConversationRow(drawerTitle);
                 row.setOnClickListener(new View.OnClickListener() {
@@ -1278,10 +1275,51 @@ public class ChatInputBox extends AndroidViewComponent {
             if (names == null || names.length() == 0) return "";
             String id = names.optString(0, "");
             JSONArray parts = item.optJSONArray(id);
-            if (parts != null && parts.length() > 2) return parts.optString(2, "");
+            if (parts != null && parts.length() > 0) {
+                if (parts.length() > 2) {
+                    String legacyDate = parts.optString(2, "").trim();
+                    if (legacyDate.length() > 0) return legacyDate;
+                }
+                String stateDate = extractLatestStateDate(parts);
+                if (stateDate.length() > 0) return stateDate;
+            }
             JSONObject root = item.optJSONObject(id);
             if (root != null) return root.optString("datetime", "");
         } catch (Exception ignored) {}
+        return "";
+    }
+
+    private String resolveDrawerTitle(String conversationId, JSONArray conversationParts) {
+        if (conversationParts == null || conversationParts.length() == 0) {
+            return conversationId == null ? "" : conversationId;
+        }
+
+        JSONObject firstState = conversationParts.optJSONObject(0);
+        if (firstState != null) {
+            for (int i = conversationParts.length() - 1; i >= 0; i--) {
+                JSONObject stateItem = conversationParts.optJSONObject(i);
+                if (stateItem == null) continue;
+                String prompt = stateItem.optString("prompt", "").trim();
+                if (prompt.length() > 0) return truncatePromptPreview(prompt, 8);
+            }
+            return conversationId == null ? "" : conversationId;
+        }
+
+        String configuredTitle = conversationParts.optString(0, "").trim();
+        if (configuredTitle.length() == 0) {
+            configuredTitle = ExtractTitleFromAIText(conversationParts.optString(1, ""));
+        }
+        return configuredTitle;
+    }
+
+    private String extractLatestStateDate(JSONArray conversationParts) {
+        if (conversationParts == null) return "";
+        for (int i = conversationParts.length() - 1; i >= 0; i--) {
+            JSONObject stateItem = conversationParts.optJSONObject(i);
+            if (stateItem == null) continue;
+            String value = stateItem.optString("datetime", "").trim();
+            if (value.length() > 0) return value;
+        }
         return "";
     }
 
