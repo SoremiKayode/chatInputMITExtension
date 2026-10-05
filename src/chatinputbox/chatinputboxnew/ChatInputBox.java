@@ -1034,8 +1034,15 @@ public class ChatInputBox extends AndroidViewComponent {
         return CurrentConversationListItem();
     }
 
-    @SimpleFunction(description = "Resets tracked conversation state list.")
+    @SimpleFunction(description = "Starts fresh conversation persistence by clearing the tracked state and active conversation id.")
     public void ResetConversationStateList() {
+        clearConversationStateList();
+        currentConversationId = "";
+        currentConversationContent = "";
+        lastUpsertedConversationTag = "";
+    }
+
+    private void clearConversationStateList() {
         while (conversationStateList.length() > 0) {
             conversationStateList.remove(conversationStateList.length() - 1);
         }
@@ -1102,7 +1109,7 @@ public class ChatInputBox extends AndroidViewComponent {
     private String resolveConversationTag(JSONArray state) {
         String candidate = currentConversationId == null ? "" : currentConversationId.trim();
         if (candidate.length() == 0 && state != null) {
-            for (int i = state.length() - 1; i >= 0; i--) {
+            for (int i = 0; i < state.length(); i++) {
                 JSONObject item = state.optJSONObject(i);
                 if (item == null) continue;
                 candidate = item.optString("tag", "").trim();
@@ -1110,6 +1117,7 @@ public class ChatInputBox extends AndroidViewComponent {
             }
         }
         if (candidate.length() == 0) candidate = generateConversationTagFromList(state);
+        currentConversationId = candidate;
         return candidate;
     }
 
@@ -1121,11 +1129,12 @@ public class ChatInputBox extends AndroidViewComponent {
     private String generateConversationTagFromList(JSONArray list) {
         String candidate = "";
         int len = list == null ? 0 : list.length();
-        if (len > 0) {
-            JSONObject last = list.optJSONObject(len - 1);
-            if (last != null) {
-                candidate = last.optString("prompt", "").trim();
-                if (candidate.length() == 0) candidate = last.optString("tag", "").trim();
+        for (int i = 0; i < len; i++) {
+            JSONObject item = list.optJSONObject(i);
+            if (item != null) {
+                candidate = item.optString("prompt", "").trim();
+                if (candidate.length() == 0) candidate = item.optString("tag", "").trim();
+                if (candidate.length() > 0) break;
             }
         }
         if (candidate.length() == 0) candidate = "chat_" + System.currentTimeMillis();
@@ -1265,7 +1274,7 @@ public class ChatInputBox extends AndroidViewComponent {
     }
 
     private void syncState(JSONArray state) {
-        ResetConversationStateList();
+        clearConversationStateList();
         for (int i = 0; i < state.length(); i++) conversationStateList.put(state.opt(i));
     }
 
